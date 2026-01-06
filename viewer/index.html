@@ -1,0 +1,2339 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Fire Events — H3 Tiles</title>
+  <link href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" rel="stylesheet">
+  <style>
+    :root {
+      --ink: #0e1f2f;
+      --accent: #f36f1b;
+      --accent-2: #1ba7a0;
+      --panel: rgba(255, 255, 255, 0.92);
+      --bg: radial-gradient(circle at 20% 20%, rgba(27, 167, 160, 0.18), transparent 35%), radial-gradient(circle at 80% 10%, rgba(243, 111, 27, 0.25), transparent 40%), #f6f8fb;
+      font-family: "Space Grotesk", "Helvetica Neue", Arial, sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: var(--bg);
+      min-height: 100vh;
+      padding: 16px;
+    }
+    .page {
+      max-width: 1200px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+    header { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; }
+    h1 { margin: 0; font-size: 26px; letter-spacing: -0.02em; }
+    p { margin: 0; color: #5b6776; }
+    .tag {
+      background: linear-gradient(120deg, var(--accent), var(--accent-2));
+      color: #fff;
+      padding: 8px 12px;
+      border-radius: 999px;
+      font-weight: 600;
+      font-size: 13px;
+      letter-spacing: 0.01em;
+    }
+    .map-wrapper {
+      position: relative;
+      width: 100%;
+      height: 47vh;
+    }
+    #map {
+      width: 100%;
+      height: 100%;
+      border-radius: 16px;
+      box-shadow: 0 14px 45px rgba(14, 31, 47, 0.18);
+      overflow: hidden;
+    }
+    .frp-panel {
+      margin-top: 12px;
+      background: var(--panel);
+      border-radius: 12px;
+      padding: 12px;
+      box-shadow: 0 6px 20px rgba(14, 31, 47, 0.08);
+    }
+    .frp-body {
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+    }
+    .frp-charts {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      flex: 1;
+    }
+    .frp-panel h3 {
+      margin: 0 0 6px 0;
+      font-size: 15px;
+      letter-spacing: -0.01em;
+    }
+    #frp-status {
+      color: #5b6776;
+      font-size: 13px;
+      margin-bottom: 6px;
+    }
+    #frp-canvas,
+    #fros-canvas {
+      width: 100%;
+      height: 140px;
+      border-radius: 10px;
+      background: #f7f9fc;
+      display: block;
+    }
+    .frp-legend {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      min-width: 90px;
+      padding-top: 4px;
+    }
+    .frp-legend .legend-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      color: #5b6776;
+    }
+    .frp-legend .swatch-rect {
+      width: 20px;
+      height: 14px;
+      border-radius: 3px;
+      box-shadow: inset 0 0 0 1px rgba(14,31,47,0.1);
+    }
+    .video-overlay {
+      background: var(--panel);
+      border-radius: 10px;
+      padding: 10px;
+      box-shadow: 0 6px 18px rgba(14, 31, 47, 0.18);
+      min-width: 240px;
+      max-width: 280px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      border: 1px solid rgba(14,31,47,0.1);
+      pointer-events: auto;
+      position: absolute;
+      top: 66px;
+      left: 12px;
+      z-index: 9;
+    }
+    .video-overlay h3 {
+      margin: 0;
+      font-size: 14px;
+      letter-spacing: -0.01em;
+    }
+    .video-overlay .video-status {
+      font-size: 12px;
+      color: #5b6776;
+    }
+    .video-overlay select,
+    .video-overlay button,
+    .btn-action {
+      width: 100%;
+      padding: 6px 8px;
+      border-radius: 8px;
+      border: 1px solid rgba(14,31,47,0.18);
+      font-weight: 600;
+      color: #1f2c3a;
+    }
+    .video-overlay button,
+    .btn-action {
+      background: linear-gradient(120deg, #1ba7a0, #f36f1b);
+      color: #fff;
+      cursor: pointer;
+    }
+    .popup-actions {
+      margin-top: 8px;
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .panel {
+      background: var(--panel);
+      border-radius: 14px;
+      padding: 14px;
+      box-shadow: 0 10px 30px rgba(14, 31, 47, 0.08);
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .legend-row-inline {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+    }
+    .controls-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px 16px;
+      align-items: center;
+    }
+    .control {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 230px;
+    }
+    .control label {
+      font-weight: 700;
+      color: #1f2c3a;
+      letter-spacing: -0.01em;
+    }
+    .control output {
+      font-variant-numeric: tabular-nums;
+      color: #4a5568;
+      min-width: 140px;
+      text-align: right;
+    }
+    .control input[type="range"] {
+      flex: 1;
+      accent-color: var(--accent);
+    }
+    .legend-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 10px;
+      background: rgba(14, 31, 47, 0.04);
+      border-radius: 999px;
+      font-weight: 600;
+      color: #5b6776;
+    }
+    .progress {
+      position: relative;
+      width: 280px;
+      height: 10px;
+      background: rgba(14,31,47,0.08);
+      border-radius: 999px;
+      overflow: hidden;
+      opacity: 0;
+      transition: opacity 0.2s ease;
+    }
+    .progress.visible { opacity: 1; }
+    .progress .fill {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      background: linear-gradient(90deg, rgba(27,167,160,0.6), rgba(243,111,27,0.6));
+      transform-origin: left;
+      animation: loading-stripe 1.2s linear infinite;
+    }
+    @keyframes loading-stripe {
+      0% { transform: translateX(-100%); }
+      50% { transform: translateX(-10%); }
+      100% { transform: translateX(100%); }
+    }
+    .progress.done .fill {
+      animation: none;
+      transform: translateX(0);
+      background: linear-gradient(90deg, #1ba7a0, #1ba7a0);
+    }
+    .zoom-display {
+      position: absolute;
+      bottom: 12px;
+      right: 12px;
+      background: rgba(14,31,47,0.74);
+      color: #f6f8fb;
+      padding: 8px 10px;
+      border-radius: 10px;
+      font-weight: 700;
+      letter-spacing: 0.01em;
+      box-shadow: 0 10px 30px rgba(14,31,47,0.18);
+      z-index: 10;
+    }
+    .coord-display {
+      position: absolute;
+      top: 12px;
+      left: 12px;
+      background: rgba(14,31,47,0.74);
+      color: #f6f8fb;
+      padding: 8px 10px;
+      border-radius: 10px;
+      font-weight: 700;
+      letter-spacing: 0.01em;
+      box-shadow: 0 10px 30px rgba(14,31,47,0.18);
+      z-index: 10;
+      min-width: 150px;
+      text-align: left;
+    }
+    .swatch { width: 14px; height: 14px; border-radius: 50%; }
+    code { background: rgba(14, 31, 47, 0.06); padding: 2px 6px; border-radius: 6px; }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <header>
+      <h1>Fire Events Tracking (FET) - Mediterranean Area</h1>
+      <div class="tag">based on FCI-hotspot (LSA-SAF)</div>
+      <!-- <p>Low and high zooms both use aggregated H3 cells. No per-slice GeoJSON is fetched.</p> -->
+    </header>
+
+    <div class="panel">
+      <div class="legend-row-inline">
+        <strong>Mean daily FRE per event (MJ)</strong>
+        <span class="legend-item"><span class="swatch" style="background:#d4f1ed"></span><span>&lt; 3k</span></span>
+        <span class="legend-item"><span class="swatch" style="background:#1ba7a0"></span><span>3k–10k</span></span>
+        <span class="legend-item"><span class="swatch" style="background:#f7bd2c"></span><span>10k–30k</span></span>
+        <span class="legend-item"><span class="swatch" style="background:#f36f1b"></span><span>30k–100k</span></span>
+        <span class="legend-item"><span class="swatch" style="background:#d7263d"></span><span>100k+</span></span>
+        <!-- <span style="color:#5b6776;">Source: <code>tiles/fires*.pmtiles</code></span> -->
+        <label style="display:flex;align-items:center;gap:8px;font-weight:700;color:#1f2c3a;">
+          <strong><span>&nbsp;&nbsp;&nbsp;&nbsp;Show fix hs hask (+1km buffer)</span></strong>
+          <input type="checkbox" id="mask-toggle">
+        </label>
+      </div>
+      <div class="controls-row">
+        <div class="control">
+          <label for="month-select">Month</label>
+          <select id="month-select">
+          </select>
+        </div>
+        <div class="control" id="day-control" style="display:none;">
+          <label for="day-slider">Day</label>
+          <input id="day-slider" type="range" min="0" max="1" step="1" value="1">
+          <output id="day-label">--</output>
+        </div>
+        <div class="control" id="intraday-control" style="display:none;">
+          <label for="time-slider">Time</label>
+          <input id="time-slider" type="range" min="0" max="1" step="1" value="1">
+          <output id="time-label">--</output>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span id="month-status" style="font-size:12px;color:#5b6776;">Idle</span>
+          <div class="progress" id="month-progress"><div class="fill"></div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="map-wrapper">
+      <div id="map"></div>
+      <div class="zoom-display" id="zoom-display">z --</div>
+      <div class="coord-display" id="coord-display">lon --, lat --</div>
+    </div>
+      <div class="frp-panel">
+      <h3 id="frp-title">FRP/FROS time series</h3>
+      <div id="frp-status">Zoom beyond 7, then click a fire event to load its FRP/FROS time series.</div>
+          <div class="frp-body">
+          <div class="frp-charts">
+            <canvas id="frp-canvas" width="800" height="140"></canvas>
+            <canvas id="fros-canvas" width="800" height="140"></canvas>
+          </div>
+          <div class="frp-legend">
+            <div class="legend-row"><span class="swatch-rect" style="background:#440154"></span><span>0</span></div>
+            <div class="legend-row"><span class="swatch-rect" style="background:#3b528b"></span><span>100</span></div>
+            <div class="legend-row"><span class="swatch-rect" style="background:#21908c"></span><span>500</span></div>
+            <div class="legend-row"><span class="swatch-rect" style="background:#5dc962"></span><span>1000</span></div>
+            <div class="legend-row"><span class="swatch-rect" style="background:#fde725"></span><span>10000+</span></div>
+            <div style="font-size:12px;color:#5b6776;margin-top:4px;">FRP (MW)</div>
+          </div>
+        </div>
+      </div>
+  </div>
+  <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
+  <script type="module">
+    import { Protocol, PMTiles } from "https://unpkg.com/pmtiles@3.0.4/dist/index.js";
+
+    const params = new URLSearchParams(window.location.search);
+    const ensureTrailingSlash = (val) => {
+      if (!val) return "";
+      return val.endsWith("/") ? val : `${val}/`;
+    };
+    const resolveBase = (raw, ensureSlash = false) => {
+      if (!raw) return null;
+      const withSlash = ensureSlash && !raw.endsWith("/") ? `${raw}/` : raw;
+      try {
+        return new URL(withSlash, window.location.href).toString();
+      } catch {
+        return withSlash; // fall back to raw if URL parsing fails
+      }
+    };
+    const dataPathRaw = (() => {
+      const raw = params.get("dataPath");
+      if (!raw) return "../tiles/";
+      return raw.endsWith("/") ? raw : `${raw}/`;
+    })();
+    const tilesBase = resolveBase(dataPathRaw, true) || dataPathRaw;
+    const h3TilesUrl = params.get("h3Url") || `${tilesBase}fires_h3.pmtiles`;
+    const pointsTilesUrl = params.get("pointsUrl") || `${tilesBase}fires_points.pmtiles`;
+    const h3UrlForMonth = (month) =>
+      month && month !== "all" ? `${tilesBase}fires_h3_${month}.pmtiles` : h3TilesUrl;
+    const pointsUrlForMonth = (month) =>
+      month && month !== "all" ? `${tilesBase}fires_points_${month}.pmtiles` : pointsTilesUrl;
+    const manifestUrl =
+      resolveBase(params.get("manifest") || "../GeoJson/manifest.json") ||
+      params.get("manifest") ||
+      "../GeoJson/manifest.json";
+    const frpPathBase =
+      resolveBase(params.get("frpPath") || "../FRP-FROS/", true) ||
+      params.get("frpPath") ||
+      "../FRP-FROS/";
+    const fetViewManifestUrl =
+      resolveBase(params.get("fetViewManifest") || "../FETView/manifest_id_dirname.json") ||
+      params.get("fetViewManifest") ||
+      "../FETView/manifest_id_dirname.json";
+    const fetViewBase =
+      ensureTrailingSlash(
+        resolveBase(params.get("fetViewBase") || "../FETView/", true) ||
+          params.get("fetViewBase") ||
+          "../FETView/"
+      ) || "../FETView/";
+    const maskPmtilesUrl = params.get("maskPmtiles") || `${tilesBase}hs_mask.pmtiles`;
+    const maskBufferPmtilesUrl =
+      params.get("maskBufferPmtiles") || `${tilesBase}hs_mask_buffer.pmtiles`;
+    const maskSourceId = "hs-density-mask";
+    const maskBufferSourceId = "hs-density-mask-buffer";
+    const maskLayerId = "hs-density-mask-layer";
+    const maskBufferLayerId = "hs-density-mask-buffer-layer";
+    const protocol = new Protocol();
+    const frpStops = [
+      { value: 0, color: "#440154" },
+      { value: 100, color: "#3b528b" },
+      { value: 500, color: "#21908c" },
+      { value: 1000, color: "#5dc962" },
+      { value: 10000, color: "#fde725" }
+    ];
+    const frpStatusEl = document.getElementById("frp-status");
+    const frpDefaultStatus = frpStatusEl ? frpStatusEl.textContent : "";
+    const fetManifestCache = { promise: null };
+    const fetVideoMetaCache = new Map();
+    let currentVideoFireId = null;
+    let videoLoadToken = 0;
+    let videoOverlayEl = null;
+    let lastVideoClickLngLat = null;
+    const videoSourceId = "fire-video-source";
+    const videoLayerId = "fire-video-layer";
+    let videoHtmlEl = null;
+    let videoTiming = null;
+    let earliestVideoTs = null;
+    let earliestActiveTimelineTs = null;
+    let currentDayMinTs = null;
+    let videoCanvasEl = null;
+    let videoCanvasCtx = null;
+    let videoSeekToken = 0;
+    let videoSeekInFlight = false;
+    let videoSeekPending = null;
+    let lastVideoSyncAt = 0;
+    let lastVideoOpacity = 0.9;
+    let currentHotspotDir = null;
+    let hotspotEnabled = false;
+    const h3LayerIds = [];
+    const hotspotCache = new Map();
+    const hotspotSourceId = "fire-hotspots";
+    const hotspotLayerId = "fire-hotspots-layer";
+    let suppressFrpResetOnPopupClose = false;
+    let earliestTimelineTs = null;
+    maplibregl.addProtocol("pmtiles", protocol.tile);
+    const popup = new maplibregl.Popup({ closeButton: true, closeOnClick: true });
+    const frpCache = new Map();
+    let currentFrpSeries = null;
+    let currentCursorTs = null;
+    let currentFrpSeriesId = null;
+
+    class BufferSource {
+      constructor(bytes, key) {
+        this.bytes = bytes;
+        this.key = key;
+      }
+      getKey() {
+        return this.key;
+      }
+      async getBytes(offset, length) {
+        const end = Math.min(this.bytes.length, offset + length);
+        // Return a true ArrayBuffer slice; PMTiles expects ArrayBuffer, not a Uint8Array view.
+        return { data: this.bytes.buffer.slice(offset, end) };
+      }
+    }
+
+    async function loadPmtiles(url) {
+      const forceFullFetch = params.has("fetchFull");
+      const remote = new PMTiles(url);
+
+      // Some servers (e.g., Python SimpleHTTP/1.0) don't really support range requests.
+      // Probe with a 0-0 range; if unsupported or forced, fall back to a full fetch.
+      async function rangeSupported(u) {
+        try {
+          const resp = await fetch(u, { headers: { Range: "bytes=0-0" } });
+          if (resp.status === 206) return true;
+          const cr = resp.headers.get("content-range") || "";
+          return cr.toLowerCase().startsWith("bytes");
+        } catch {
+          return false;
+        }
+      }
+
+      if (!forceFullFetch && (await rangeSupported(url))) {
+        try {
+          await remote.getHeader(); // triggers a fetch so errors surface early
+          protocol.add(remote);
+          return { pmtiles: remote, usedFallback: false };
+        } catch (rangeErr) {
+          console.warn("Byte serving failed, fetching full pmtiles file instead", rangeErr);
+        }
+      }
+
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error(`Fallback fetch failed: ${response.status} ${response.statusText}`);
+      }
+
+      const bytes = new Uint8Array(await response.arrayBuffer());
+      const inMemory = new PMTiles(new BufferSource(bytes, url));
+      protocol.add(inMemory);
+      return { pmtiles: inMemory, usedFallback: true };
+    }
+
+    async function loadManifestRange() {
+      try {
+        const resp = await fetch(manifestUrl, { cache: "no-cache" });
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const json = await resp.json();
+        const items = (json.items || [])
+          .map((item) => {
+            const ts = Date.parse(item.timestamp);
+            return Number.isFinite(ts) ? { ts, label: item.label || item.timestamp } : null;
+          })
+          .filter(Boolean);
+        if (!items.length) {
+          throw new Error("No timestamps in manifest");
+        }
+        // Build day buckets
+        const days = new Map();
+        for (const { ts, label } of items) {
+          const d = new Date(ts);
+          const dayLabel = d.toISOString().slice(0, 10);
+          const bucket = days.get(dayLabel) || { label: dayLabel, times: [] };
+          bucket.times.push({ ts, label });
+          days.set(dayLabel, bucket);
+        }
+        const dayList = Array.from(days.values()).sort((a, b) => a.label.localeCompare(b.label));
+        dayList.forEach((d) => d.times.sort((a, b) => a.ts - b.ts));
+        return { dayList };
+      } catch (err) {
+        console.warn("No manifest found for timeline; time slider disabled", err);
+        return null;
+      }
+    }
+
+    function formatTimeLabel(epochMs) {
+      if (!Number.isFinite(epochMs)) return "--";
+      const dt = new Date(epochMs);
+      return dt.toISOString().replace(".000", "");
+    }
+
+    function buildTimeFilter(epochMs) {
+      const base = ["all", ["==", ["geometry-type"], "Polygon"]];
+      if (Number.isFinite(epochMs)) {
+        const seconds = epochMs / 1000;
+        base.push(
+          ["<=", ["coalesce", ["get", "time_min_ts"], seconds], seconds],
+          [">=", ["coalesce", ["get", "time_max_ts"], seconds], seconds]
+        );
+      }
+      return base;
+    }
+
+    function buildRawTimeFilter(dayStart, epochMs, geomTypes) {
+      const base = ["all", ["match", ["geometry-type"], geomTypes, true, false]];
+      if (Number.isFinite(dayStart)) {
+        base.push([">=", ["coalesce", ["get", "time_ts"], 0], dayStart / 1000]);
+      }
+      if (Number.isFinite(epochMs)) {
+        const seconds = epochMs / 1000;
+        base.push(["<=", ["coalesce", ["get", "time_ts"], seconds], seconds]);
+      }
+      return base;
+    }
+
+    function buildH3DayFilter(dayStartMs, dayEndMs, res) {
+      const base = ["all", ["==", ["geometry-type"], "Polygon"]];
+      if (Number.isFinite(res)) {
+        base.push(["==", ["get", "res"], res]);
+      }
+      if (Number.isFinite(dayStartMs) && Number.isFinite(dayEndMs)) {
+        const start = dayStartMs / 1000;
+        const end = dayEndMs / 1000;
+        // Require a valid day window; avoid coalesce so only matching-day features pass
+        base.push(
+          [">=", ["get", "day_start_ts"], start],
+          ["<", ["get", "day_start_ts"], end],
+          [">", ["get", "day_end_ts"], start],
+          ["<=", ["get", "day_end_ts"], end]
+        );
+      }
+      return base;
+    }
+
+    function padFireId(id) {
+      const str = String(id || "").trim();
+      if (!str) return null;
+      return str.padStart(9, "0");
+    }
+
+    function normalizeDirname(raw) {
+      return String(raw || "").replace(/[^A-Za-z0-9_-]/g, "");
+    }
+
+    function setVideoStatus(message) {
+      if (videoOverlayEl) {
+        const status = videoOverlayEl.querySelector(".video-status");
+        if (status) status.textContent = message || "";
+      } else if (frpStatusEl) {
+        frpStatusEl.textContent = message || frpDefaultStatus;
+      }
+    }
+
+    async function loadFetManifest() {
+      if (fetManifestCache.promise) return fetManifestCache.promise;
+      fetManifestCache.promise = fetch(fetViewManifestUrl, { cache: "no-cache" })
+        .then((resp) => {
+          if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+          return resp.json();
+        })
+        .then((list) => {
+          const map = new Map();
+          (list || []).forEach((item) => {
+            const dir = normalizeDirname(item && item.dirname);
+            const idVal = item && item.id;
+            if (!dir || idVal === undefined || idVal === null) return;
+            const idStr = String(idVal).trim();
+            if (idStr) map.set(idStr, dir);
+            const padded = padFireId(idVal);
+            if (padded) map.set(padded, dir);
+          });
+          return map;
+        })
+        .catch((err) => {
+          console.warn("FETView manifest load failed", err);
+          return null;
+        });
+      return fetManifestCache.promise;
+    }
+
+    function lookupFetDir(manifestMap, idStr) {
+      if (!manifestMap || !idStr) return null;
+      const padded = padFireId(idStr);
+      const numeric = String(Number(idStr));
+      return manifestMap.get(idStr) || manifestMap.get(numeric) || manifestMap.get(padded) || null;
+    }
+
+    async function fetchFetVideoMeta(dirname) {
+      const dir = normalizeDirname(dirname);
+      if (!dir) return null;
+      if (fetVideoMetaCache.has(dir)) return fetVideoMetaCache.get(dir);
+      const url = `${fetViewBase}${dir}/web/media/video_metadata.json`;
+      const p = fetch(url, { cache: "no-cache" })
+        .then((resp) => {
+          if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+          return resp.json();
+        })
+        .catch((err) => {
+          console.warn("FETView video metadata failed", err);
+          return null;
+        });
+      fetVideoMetaCache.set(dir, p);
+      return p;
+    }
+
+    function buildBandList(meta) {
+      const entries = Object.entries((meta && meta.bands) || {}).filter(
+        ([, info]) => info && info.video
+      );
+      if (entries.length) {
+        return entries.map(([key, info]) => ({
+          key,
+          label: key,
+          video: info.video,
+          bounds: info.bounds || info.boundsWebMercator || null
+        }));
+      }
+      const fallbackBands = ["rgb", "b07", "b13"];
+      return fallbackBands.map((key) => ({
+        key,
+        label: key.toUpperCase(),
+        video: `media/${key}.webm`,
+        bounds: null
+      }));
+    }
+
+    function mercToLngLat(x, y) {
+      const R = 6378137.0;
+      const lng = (x / R) * (180 / Math.PI);
+      const lat = (2 * Math.atan(Math.exp(y / R)) - Math.PI / 2) * (180 / Math.PI);
+      return [lng, lat];
+    }
+
+    function earliestFrameTs(meta) {
+      if (!meta || !meta.bands) return null;
+      let minTs = null;
+      Object.values(meta.bands).forEach((info) => {
+        const frames = Array.isArray(info && info.frames) ? info.frames : [];
+        frames.forEach((f) => {
+          const ts = f && Date.parse(f.iso);
+          if (Number.isFinite(ts)) {
+            if (minTs === null || ts < minTs) minTs = ts;
+          }
+        });
+      });
+      return minTs;
+    }
+
+    function computeEarliestTimelineTs(dayList) {
+      if (!Array.isArray(dayList)) return null;
+      let minTs = null;
+      dayList.forEach((day) => {
+        const times = Array.isArray(day && day.times) ? day.times : [];
+        times.forEach((t) => {
+          const ts = t && t.ts;
+          if (Number.isFinite(ts)) {
+            if (minTs === null || ts < minTs) minTs = ts;
+          }
+        });
+      });
+      return minTs;
+    }
+
+    function formatHotspotFilename(ts) {
+      const d = new Date(ts);
+      const y = d.getUTCFullYear();
+      const m = String(d.getUTCMonth() + 1).padStart(2, "0");
+      const day = String(d.getUTCDate()).padStart(2, "0");
+      const hh = String(d.getUTCHours()).padStart(2, "0");
+      const mm = String(d.getUTCMinutes()).padStart(2, "0");
+      return `LSA-509_MTG_MTFRPPIXEL-ListProduct_MTG-FD_${y}${m}${day}${hh}${mm}.csv`;
+    }
+
+    function parseHotspotCsv(text) {
+      const lines = text.trim().split(/\r?\n/);
+      if (lines.length < 2) return [];
+      const headers = lines[0].split(",");
+      const idxLat = headers.indexOf("LATITUDE_PARALLAX");
+      const idxLng = headers.indexOf("LONGITUDE_PARALLAX");
+      const idxFrp = headers.indexOf("FRP");
+      const idxTime = headers.indexOf("ACQTIME");
+      const feats = [];
+      for (let i = 1; i < lines.length; i++) {
+        const cols = lines[i].split(",");
+        const lat = Number(cols[idxLat]);
+        const lng = Number(cols[idxLng]);
+        if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
+        const frp = idxFrp >= 0 ? Number(cols[idxFrp]) : null;
+        const acq = idxTime >= 0 ? cols[idxTime] : "";
+        feats.push({
+          type: "Feature",
+          geometry: { type: "Point", coordinates: [lng, lat] },
+          properties: { frp, acq }
+        });
+      }
+      return feats;
+    }
+
+    function loadHotspotCsv(url) {
+      if (hotspotCache.has(url)) return hotspotCache.get(url);
+      const p = fetch(url)
+        .then((r) => {
+          if (!r.ok) throw new Error(`HTTP ${r.status}`);
+          return r.text();
+        })
+        .then((txt) => parseHotspotCsv(txt))
+        .catch((err) => {
+          console.warn("Hotspot fetch failed", url, err);
+          return [];
+        });
+      hotspotCache.set(url, p);
+      return p;
+    }
+
+    async function refreshHotspots(tsOverride = null) {
+      if (!hotspotEnabled) return;
+      if (!currentHotspotDir) {
+        const manifestMap = await loadFetManifest();
+        if (manifestMap && currentVideoFireId) {
+          const dir = lookupFetDir(manifestMap, currentVideoFireId);
+          if (dir) currentHotspotDir = normalizeDirname(dir);
+        }
+        if (!currentHotspotDir) return;
+      }
+      if (!map) {
+        console.info("Hotspot skip: map not ready");
+        return;
+      }
+      let ts = Number.isFinite(tsOverride) ? tsOverride : currentCursorTs;
+      if (!Number.isFinite(ts)) ts = currentDayMinTs;
+      if (!Number.isFinite(ts)) ts = earliestActiveTimelineTs;
+      if (!Number.isFinite(ts)) ts = earliestTimelineTs;
+      if (!Number.isFinite(ts)) {
+        console.info("Hotspot skip: no valid timestamp", { tsOverride, currentCursorTs, currentDayMinTs });
+        return;
+      }
+      // Only use hotspots older than the current time slider, within the last 30 minutes
+      const stepMs = 10 * 60 * 1000;
+      const offsets = [0, -stepMs, -2 * stepMs, -3 * stepMs]; // 0 to -30 min
+      let feats = [];
+      let usedFile = null;
+      for (const off of offsets) {
+        const tsTry = ts + off;
+        const file = formatHotspotFilename(tsTry);
+        const url = `${fetViewBase}${currentHotspotDir}/hotspots/${file}`;
+      const f = await loadHotspotCsv(url);
+      if (f.length) {
+        feats = f;
+        usedFile = file;
+        break;
+      }
+    }
+    if (!feats.length) {
+      if (map.getLayer(hotspotLayerId)) map.removeLayer(hotspotLayerId);
+      if (map.getSource(hotspotSourceId)) map.removeSource(hotspotSourceId);
+      return;
+    }
+      const geojson = { type: "FeatureCollection", features: feats };
+      if (map.getSource(hotspotSourceId)) {
+        map.getSource(hotspotSourceId).setData(geojson);
+      } else {
+        map.addSource(hotspotSourceId, { type: "geojson", data: geojson });
+        // Place hotspots above video; if video exists, insert above it
+        const before = map.getLayer(videoLayerId) ? undefined : videoLayerId;
+        map.addLayer(
+          {
+            id: hotspotLayerId,
+            type: "circle",
+            source: hotspotSourceId,
+            paint: {
+              "circle-radius": 6,
+              "circle-color": "rgba(255, 23, 68, 0.6)",
+              "circle-stroke-width": 1.2,
+              "circle-stroke-color": "#fff"
+            }
+          },
+          before
+        );
+      }
+    }
+
+    function removeVideoOverlay(reason) {
+      if (!videoOverlayEl && !currentVideoFireId) return;
+      if (map) {
+        if (map.getLayer(videoLayerId)) map.removeLayer(videoLayerId);
+        if (map.getSource(videoSourceId)) map.removeSource(videoSourceId);
+        if (map.getLayer(hotspotLayerId)) map.removeLayer(hotspotLayerId);
+        if (map.getSource(hotspotSourceId)) map.removeSource(hotspotSourceId);
+        setH3Visibility(true);
+      }
+      videoHtmlEl = null;
+      videoTiming = null;
+      videoCanvasEl = null;
+      videoCanvasCtx = null;
+      earliestVideoTs = null;
+      videoSeekToken = 0;
+      currentHotspotDir = null;
+      hotspotEnabled = false;
+      if (videoOverlayEl && videoOverlayEl.parentNode) {
+        videoOverlayEl.parentNode.removeChild(videoOverlayEl);
+      }
+      videoOverlayEl = null;
+      currentVideoFireId = null;
+      if (reason) setVideoStatus(reason);
+    }
+
+    function fitMapForBand(band, bandInfo, fallbackLngLat) {
+      if (!map || !map.fitBounds) return;
+      const tryBounds = () => {
+        const raw = (band && band.bounds) || (bandInfo && bandInfo.bounds) || null;
+        if (!raw || !Array.isArray(raw) || raw.length !== 2) return false;
+        let [[a0, a1], [b0, b1]] = raw; // stored as [lat, lon]
+        const nums = [a0, a1, b0, b1].every((v) => Number.isFinite(v));
+        if (!nums) return false;
+        let swLng, swLat, neLng, neLat;
+        const looksMerc = [a0, a1, b0, b1].some((v) => Math.abs(v) > 180);
+        if (looksMerc) {
+          // Treat as [y, x] (lat_m, lon_m)
+          const sw = mercToLngLat(a1, a0);
+          const ne = mercToLngLat(b1, b0);
+          swLng = sw[0];
+          swLat = sw[1];
+          neLng = ne[0];
+          neLat = ne[1];
+        } else {
+          // Provided as [lat, lon]
+          swLat = Math.min(a0, b0);
+          neLat = Math.max(a0, b0);
+          swLng = Math.min(a1, b1);
+          neLng = Math.max(a1, b1);
+        }
+        const west = swLng;
+        const east = neLng;
+        const south = swLat;
+        const north = neLat;
+        const width = east - west;
+        const height = north - south;
+        if (width <= 0 || height <= 0 || width > 30 || height > 30) return false; // avoid wild jumps
+        try {
+          map.fitBounds(
+            [
+              [west, south],
+              [east, north]
+            ],
+            { padding: 20, maxZoom: 13, duration: 400 }
+          );
+          return true;
+        } catch (err) {
+          console.warn("fitBounds failed for video", err);
+          return false;
+        }
+      };
+      const ok = tryBounds();
+      if (!ok && fallbackLngLat && fallbackLngLat.lng !== undefined && fallbackLngLat.lat !== undefined) {
+        map.easeTo({ center: fallbackLngLat, zoom: Math.max(7.2, map.getZoom() || 7), duration: 300 });
+      }
+    }
+
+    async function seekVideoToTime(targetSec) {
+      if (!videoHtmlEl || !Number.isFinite(targetSec)) return false;
+      videoSeekPending = targetSec;
+      if (videoSeekInFlight) return false;
+      videoSeekInFlight = true;
+      const run = async () => {
+        const token = ++videoSeekToken;
+        const target = videoSeekPending;
+        videoSeekPending = null;
+        const drawFrame = () => {
+          try {
+            if (!videoCanvasCtx || !videoCanvasEl) return;
+            const w = videoHtmlEl.videoWidth || videoCanvasEl.width || 2;
+            const h = videoHtmlEl.videoHeight || videoCanvasEl.height || 2;
+            if (videoCanvasEl.width !== w) videoCanvasEl.width = w;
+            if (videoCanvasEl.height !== h) videoCanvasEl.height = h;
+            videoCanvasCtx.clearRect(0, 0, w, h); // transparent fallback when frame missing
+            if (videoHtmlEl.videoWidth && videoHtmlEl.videoHeight) {
+              videoCanvasCtx.drawImage(videoHtmlEl, 0, 0);
+            }
+            if (map && map.getSource(videoSourceId) && map.triggerRepaint) {
+              map.triggerRepaint();
+            }
+          } catch (err) {
+            console.warn("Failed to draw frame", err);
+          }
+        };
+        const completed = await new Promise((resolve) => {
+          const onSeek = () => {
+            videoHtmlEl.removeEventListener("seeked", onSeek);
+            if (token !== videoSeekToken) return resolve(false);
+            drawFrame();
+            resolve(true);
+          };
+          videoHtmlEl.addEventListener("seeked", onSeek);
+          try {
+            videoHtmlEl.pause();
+            videoHtmlEl.currentTime = target;
+          } catch (err) {
+            console.warn("Failed to seek video", err);
+            videoHtmlEl.removeEventListener("seeked", onSeek);
+            resolve(false);
+          }
+        });
+        videoSeekInFlight = false;
+        if (videoSeekPending !== null) run();
+        return completed;
+      };
+      return run();
+    }
+
+    function bandTimingTarget() {
+      if (!videoTiming || !Number.isFinite(videoTiming.startTs)) return 0;
+      const { startTs, frameDuration, frameCount, duration, framesTs, endTs } = videoTiming;
+      const targetTs = Number.isFinite(currentCursorTs) ? currentCursorTs : startTs;
+      if (Array.isArray(framesTs) && framesTs.length) {
+        let nearestIdx = 0;
+        let nearestDiff = Infinity;
+        framesTs.forEach((ts, idx) => {
+          const diff = Math.abs(ts - targetTs);
+          if (diff < nearestDiff) {
+            nearestDiff = diff;
+            nearestIdx = idx;
+          }
+        });
+        if (Number.isFinite(frameDuration)) {
+          return nearestIdx * frameDuration;
+        }
+        if (Number.isFinite(duration) && framesTs.length > 1) {
+          const step = duration / framesTs.length;
+          return nearestIdx * step;
+        }
+        return Math.max(0, (framesTs[nearestIdx] - framesTs[0]) / 1000);
+      }
+      const end = Number.isFinite(endTs)
+        ? endTs
+        : Number.isFinite(frameDuration) && frameCount
+        ? startTs + frameDuration * 1000 * frameCount
+        : null;
+      const clampedTs = Number.isFinite(end) ? Math.min(Math.max(targetTs, startTs), end) : targetTs;
+      const maxDur =
+        Number.isFinite(duration) && duration > 0
+          ? duration
+          : Number.isFinite(frameDuration) && frameCount
+          ? frameDuration * frameCount
+          : null;
+      const offsetSec = (clampedTs - startTs) / 1000;
+      return Math.max(0, Number.isFinite(maxDur) ? Math.min(maxDur, offsetSec) : offsetSec);
+    }
+
+    function syncVideoToTime() {
+      const now = performance.now ? performance.now() : Date.now();
+      if (now - lastVideoSyncAt < 150) return; // throttle rapid seeks
+      lastVideoSyncAt = now;
+      if (!videoHtmlEl || !videoTiming) return;
+      if (!Number.isFinite(currentCursorTs)) return;
+      const { startTs, frameDuration, frameCount, duration: metaDuration, framesTs, endTs } = videoTiming;
+      if (!Number.isFinite(startTs)) return;
+      if (Number.isFinite(endTs) && (currentCursorTs < startTs || currentCursorTs > endTs)) {
+        if (videoCanvasCtx && videoCanvasEl) {
+          videoCanvasCtx.clearRect(0, 0, videoCanvasEl.width || 2, videoCanvasEl.height || 2);
+        }
+        if (map.getLayer(videoLayerId) && lastVideoOpacity !== 0) {
+          map.setPaintProperty(videoLayerId, "raster-opacity", 0);
+          lastVideoOpacity = 0;
+        }
+        return;
+      }
+      if (map.getLayer(videoLayerId) && lastVideoOpacity !== 0.9) {
+        map.setPaintProperty(videoLayerId, "raster-opacity", 0.9);
+        lastVideoOpacity = 0.9;
+      }
+      let target = 0;
+      if (Array.isArray(framesTs) && framesTs.length) {
+        let nearestIdx = 0;
+        let nearestDiff = Infinity;
+        framesTs.forEach((ts, idx) => {
+          const diff = Math.abs(ts - currentCursorTs);
+          if (diff < nearestDiff) {
+            nearestDiff = diff;
+            nearestIdx = idx;
+          }
+        });
+        if (Number.isFinite(frameDuration)) {
+          target = nearestIdx * frameDuration;
+        } else if (Number.isFinite(metaDuration) && framesTs.length > 1) {
+          const step = metaDuration / framesTs.length;
+          target = nearestIdx * step;
+        } else {
+          target = Math.max(0, (framesTs[nearestIdx] - framesTs[0]) / 1000);
+        }
+      } else {
+        const maxDur =
+          Number.isFinite(metaDuration) && metaDuration > 0
+            ? metaDuration
+            : frameDuration && frameCount ? frameDuration * frameCount : null;
+        const offsetSec = (currentCursorTs - startTs) / 1000;
+        target = Math.max(0, maxDur ? Math.min(maxDur, offsetSec) : offsetSec);
+      }
+      seekVideoToTime(target);
+    }
+
+    async function updateVideoLayer(band, bandInfo, baseUrl) {
+      if (!map) return false;
+      if (!band || !band.video) {
+        setVideoStatus("No video URL available for this band.");
+        return false;
+      }
+      const raw = (band && band.bounds) || (bandInfo && bandInfo.bounds) || null;
+      let coords = null;
+      if (raw && Array.isArray(raw) && raw.length === 2) {
+        let [[a0, a1], [b0, b1]] = raw; // stored as [lat, lon]
+        const nums = [a0, a1, b0, b1].every((v) => Number.isFinite(v));
+        if (nums) {
+          const looksMerc = [a0, a1, b0, b1].some((v) => Math.abs(v) > 180);
+          if (looksMerc) {
+            const sw = mercToLngLat(a1, a0);
+            const ne = mercToLngLat(b1, b0);
+            coords = [
+              [sw[0], ne[1]],
+              [ne[0], ne[1]],
+              [ne[0], sw[1]],
+              [sw[0], sw[1]]
+            ];
+          } else {
+            const south = Math.min(a0, b0);
+            const north = Math.max(a0, b0);
+            const west = Math.min(a1, b1);
+            const east = Math.max(a1, b1);
+            coords = [
+              [west, north],
+              [east, north],
+              [east, south],
+              [west, south]
+            ];
+          }
+        }
+      }
+      if (!coords && lastVideoClickLngLat) {
+        const { lng, lat } = lastVideoClickLngLat;
+        const d = 0.05;
+        coords = [
+          [lng - d, lat + d],
+          [lng + d, lat + d],
+          [lng + d, lat - d],
+          [lng - d, lat - d]
+        ];
+      }
+      if (!coords) {
+        setVideoStatus("No bounds available to place video.");
+        return false;
+      }
+      let url = "";
+      try {
+        url = new URL(band.video, ensureTrailingSlash(baseUrl)).toString();
+      } catch {
+        url = `${ensureTrailingSlash(baseUrl)}${band.video}`;
+      }
+      if (map.getLayer(videoLayerId)) map.removeLayer(videoLayerId);
+      if (map.getSource(videoSourceId)) map.removeSource(videoSourceId);
+      videoSeekToken = 0;
+      videoSeekPending = null;
+      videoSeekInFlight = false;
+      lastVideoSyncAt = 0;
+      lastVideoOpacity = 0.9;
+      // Prepare hidden video and canvas to draw a single frame
+      videoHtmlEl = document.createElement("video");
+      videoHtmlEl.crossOrigin = "anonymous";
+      videoHtmlEl.muted = true;
+      videoHtmlEl.playsInline = true;
+      videoHtmlEl.autoplay = false;
+      videoHtmlEl.loop = false;
+      videoHtmlEl.src = url;
+      videoCanvasEl = document.createElement("canvas");
+      videoCanvasCtx = videoCanvasEl.getContext("2d", { willReadFrequently: true });
+      const framesTs = (bandInfo && Array.isArray(bandInfo.frames) ? bandInfo.frames : [])
+        .map((f) => Number.isFinite(f && Date.parse(f.iso)) ? Date.parse(f.iso) : null)
+        .filter((v) => Number.isFinite(v))
+        .sort((a, b) => a - b);
+      const frameCount = framesTs.length;
+      const startTs = frameCount ? framesTs[0] : null;
+      const frameDuration = Number(bandInfo && bandInfo.frameDuration);
+      const endTs = frameCount
+        ? framesTs[frameCount - 1]
+        : Number.isFinite(frameDuration) && frameCount
+        ? startTs + frameDuration * 1000 * frameCount
+        : null;
+      const durationFromFrames = frameCount > 1 ? (framesTs[frameCount - 1] - framesTs[0]) / 1000 : null;
+      videoTiming = {
+        startTs,
+        frameDuration: Number.isFinite(frameDuration) ? frameDuration : null,
+        frameCount: framesTs.length,
+        duration:
+          Number.isFinite(durationFromFrames)
+            ? durationFromFrames
+            : Number.isFinite(frameDuration) && frameCount
+            ? frameDuration * frameCount
+            : null,
+        framesTs,
+        endTs
+      };
+      const seekTargetSec = bandTimingTarget();
+      // Only snap timeline to start of video when first loading this fire, not on band switch
+      if (!earliestVideoTs && Number.isFinite(startTs)) {
+        earliestVideoTs = startTs;
+      }
+      await new Promise((resolve) => {
+        let resolved = false;
+        const onReady = () => {
+          if (resolved) return;
+          resolved = true;
+          if (Number.isFinite(videoHtmlEl.duration) && !Number.isFinite(videoTiming.duration)) {
+            videoTiming.duration = videoHtmlEl.duration;
+          }
+          if (videoHtmlEl.videoWidth && videoHtmlEl.videoHeight) {
+            if (videoCanvasEl.width !== videoHtmlEl.videoWidth) videoCanvasEl.width = videoHtmlEl.videoWidth;
+            if (videoCanvasEl.height !== videoHtmlEl.videoHeight) videoCanvasEl.height = videoHtmlEl.videoHeight;
+          } else if (videoCanvasEl) {
+            // Ensure a transparent canvas even if no frame is available
+            videoCanvasEl.width = videoCanvasEl.width || 2;
+            videoCanvasEl.height = videoCanvasEl.height || 2;
+            if (videoCanvasCtx) {
+              videoCanvasCtx.clearRect(0, 0, videoCanvasEl.width, videoCanvasEl.height);
+            }
+          }
+          resolve(true);
+        };
+        videoHtmlEl.addEventListener("loadedmetadata", onReady, { once: true });
+        videoHtmlEl.addEventListener("loadeddata", onReady, { once: true });
+        videoHtmlEl.addEventListener("canplay", onReady, { once: true });
+        videoHtmlEl.addEventListener(
+          "error",
+          () => {
+            if (!resolved) resolve(false);
+          },
+          { once: true }
+        );
+      });
+      await seekVideoToTime(seekTargetSec);
+      map.addSource(videoSourceId, {
+        type: "canvas",
+        canvas: videoCanvasEl,
+        coordinates: coords
+      });
+      // Insert video very low; fire geojson, hotspots, and masks render above
+      const beforeId =
+        (map.getLayer("fires-polygons-outline") && "fires-polygons-outline") ||
+        (map.getLayer("fires-polygons") && "fires-polygons") ||
+        (map.getLayer("fires-lines") && "fires-lines") ||
+        (map.getLayer("fires-points") && "fires-points") ||
+        (map.getLayer(hotspotLayerId) && hotspotLayerId) ||
+        (map.getLayer(maskLayerId) && maskLayerId) ||
+        (map.getLayer(maskBufferLayerId) && maskBufferLayerId) ||
+        (map.getLayer("fires-h3") && "fires-h3") ||
+        (h3LayerIds.length ? h3LayerIds[0].id : undefined);
+      map.addLayer(
+        {
+          id: videoLayerId,
+          type: "raster",
+          source: videoSourceId,
+          paint: { "raster-opacity": 0.9 }
+        },
+        beforeId
+      );
+      setVideoStatus(`Ready — ${band.label}`);
+      syncVideoToTime();
+      return true;
+    }
+
+    function setH3Visibility(visible) {
+      h3LayerIds.forEach(({ id }) => {
+        if (map.getLayer(id)) {
+          map.setLayoutProperty(id, "visibility", visible ? "visible" : "none");
+        }
+      });
+      const h3Sources = ["fires-h3"];
+      h3Sources.forEach((sid) => {
+        if (map.getSource(sid)) {
+          map.getSource(sid);
+        }
+      });
+    }
+
+    function ensureFireGeojsonVisible() {
+      if (!map) return;
+      ["fires-points", "fires-lines", "fires-polygons", "fires-polygons-outline"].forEach((id) => {
+        if (map.getLayer(id)) {
+          map.setLayoutProperty(id, "visibility", "visible");
+        }
+      });
+    }
+
+    async function openVideoOverlay(bands, baseUrl, fireId, meta) {
+      if (!Array.isArray(bands) || !bands.length) {
+        setVideoStatus("No WEBM entries found for this event.");
+        return;
+      }
+      removeVideoOverlay();
+      currentVideoFireId = fireId;
+      const wrap = document.createElement("div");
+      wrap.className = "video-overlay";
+      const title = document.createElement("h3");
+      title.textContent = `Fire ${fireId}`;
+      const status = document.createElement("div");
+      status.className = "video-status";
+      status.textContent = "Select a band to play.";
+      const dataStatus = document.createElement("div");
+      dataStatus.className = "video-status";
+      dataStatus.textContent = "Images status: idle";
+      const setDataStatus = (msg) => {
+        dataStatus.textContent = `Images status: ${msg}`;
+      };
+      const select = document.createElement("select");
+      bands.forEach((b) => {
+        const opt = document.createElement("option");
+        opt.value = b.key;
+        opt.textContent = b.label;
+        select.appendChild(opt);
+      });
+      const vid = document.createElement("video");
+      const unloadBtn = document.createElement("button");
+      unloadBtn.type = "button";
+      unloadBtn.textContent = "Unload images";
+      unloadBtn.className = "btn-action";
+      unloadBtn.addEventListener("click", () => {
+        removeVideoOverlay("Images unloaded.");
+        renderFrpSeries([], null);
+        currentFrpSeriesId = null;
+        currentFrpSeries = null;
+        if (frpStatusEl) frpStatusEl.textContent = frpDefaultStatus || "";
+        hotspotEnabled = false;
+        if (map) {
+          if (map.getLayer(hotspotLayerId)) map.removeLayer(hotspotLayerId);
+          if (map.getSource(hotspotSourceId)) map.removeSource(hotspotSourceId);
+          setH3Visibility(true);
+        }
+      });
+      const hotspotToggle = document.createElement("label");
+      hotspotToggle.style.display = "flex";
+      hotspotToggle.style.alignItems = "center";
+      hotspotToggle.style.gap = "6px";
+      const hotspotCheckbox = document.createElement("input");
+      hotspotCheckbox.type = "checkbox";
+      hotspotCheckbox.id = "hotspot-toggle";
+      hotspotCheckbox.addEventListener("change", () => {
+        hotspotEnabled = hotspotCheckbox.checked;
+        if (!hotspotEnabled) {
+          if (map) {
+            if (map.getLayer(hotspotLayerId)) map.removeLayer(hotspotLayerId);
+            if (map.getSource(hotspotSourceId)) map.removeSource(hotspotSourceId);
+          }
+        } else {
+          console.info("Hotspot toggle on", { currentCursorTs, currentDayMinTs, earliestActiveTimelineTs });
+          refreshHotspots(currentCursorTs);
+        }
+      });
+      const hotspotLabel = document.createElement("span");
+      hotspotLabel.textContent = "Show hotspots (last 30 min)";
+      hotspotToggle.appendChild(hotspotCheckbox);
+      hotspotToggle.appendChild(hotspotLabel);
+
+      const setSrc = async (key) => {
+        const band = bands.find((b) => b.key === key);
+        if (!band) return;
+        status.textContent = `Loading ${band.label}...`;
+        setDataStatus("fetching image");
+        const bandInfo =
+          meta && meta.bands ? meta.bands[band.key] || meta.bands[band.key.toUpperCase()] : null;
+        const ok = await updateVideoLayer(band, bandInfo, baseUrl);
+        if (ok) {
+          console.info("Band switch", {
+            band: band.label || band.key,
+            start: Number.isFinite(videoTiming && videoTiming.startTs)
+              ? new Date(videoTiming.startTs).toISOString()
+              : null,
+            end: Number.isFinite(videoTiming && videoTiming.endTs)
+              ? new Date(videoTiming.endTs).toISOString()
+              : null,
+            targetTs: Number.isFinite(currentCursorTs) ? new Date(currentCursorTs).toISOString() : null
+          });
+          await seekVideoToTime(bandTimingTarget());
+          syncVideoToTime();
+          status.textContent = `Synced to ${band.label}`;
+          setDataStatus("synced");
+          setH3Visibility(false);
+          ensureFireGeojsonVisible();
+        } else {
+          status.textContent = `Failed to load ${band.label}`;
+          setDataStatus("error");
+        }
+      };
+      select.addEventListener("change", (e) => {
+        setSrc(e.target.value);
+      });
+      wrap.appendChild(title);
+      wrap.appendChild(status);
+      wrap.appendChild(dataStatus);
+      wrap.appendChild(select);
+      wrap.appendChild(hotspotToggle);
+      wrap.appendChild(unloadBtn);
+      videoOverlayEl = wrap;
+      const mapEl = map && typeof map.getContainer === "function" ? map.getContainer() : null;
+      if (mapEl) {
+        const style = window.getComputedStyle(mapEl);
+        if (style.position === "static" || !style.position) {
+          mapEl.style.position = "relative";
+        }
+        mapEl.appendChild(wrap);
+      } else if (mapWrapper) {
+        const style = window.getComputedStyle(mapWrapper);
+        if (style.position === "static" || !style.position) {
+          mapWrapper.style.position = "relative";
+        }
+        mapWrapper.appendChild(wrap);
+      } else {
+        document.body.appendChild(wrap);
+      }
+      await setSrc(bands[0].key);
+      setVideoStatus("");
+      suppressFrpResetOnPopupClose = true;
+      popup.remove();
+    }
+
+    async function loadVideosForFire(fireId) {
+      if (map && map.getZoom && map.getZoom() < 7) {
+        setVideoStatus("Zoom to 7+ to view videos.");
+        return;
+      }
+      const idStr = String(fireId ?? "").trim();
+      if (!idStr) {
+        setVideoStatus("No fire id found for videos.");
+        return;
+      }
+      currentVideoFireId = idStr;
+      videoLoadToken += 1;
+      const token = videoLoadToken;
+      setVideoStatus("Loading video manifest...");
+      const manifestMap = await loadFetManifest();
+      if (token !== videoLoadToken) return;
+      if (!manifestMap || !manifestMap.size) {
+        setVideoStatus("No FETView manifest available for videos.");
+        return;
+      }
+      const dirname = lookupFetDir(manifestMap, idStr);
+      if (!dirname) {
+        setVideoStatus(`No videos registered for fire ID ${idStr}.`);
+        return;
+      }
+      currentHotspotDir = normalizeDirname(dirname);
+      setVideoStatus("Loading videos...");
+      const meta = await fetchFetVideoMeta(dirname);
+      if (token !== videoLoadToken) return;
+      const baseUrl = ensureTrailingSlash(`${fetViewBase}${normalizeDirname(dirname)}/web/`);
+      earliestVideoTs = null;
+      const bands = buildBandList(meta);
+      const videoStart = earliestFrameTs(meta);
+      const sliderMinTs =
+        Number.isFinite(currentDayMinTs) && currentDayMinTs !== null
+          ? currentDayMinTs
+          : Number.isFinite(earliestActiveTimelineTs) && earliestActiveTimelineTs !== null
+          ? earliestActiveTimelineTs
+          : Number.isFinite(earliestTimelineTs)
+          ? earliestTimelineTs
+          : null;
+     console.info("WEBM load timing", {
+       videoStart: Number.isFinite(videoStart) ? new Date(videoStart).toISOString() : videoStart,
+       sliderMin: Number.isFinite(sliderMinTs) ? new Date(sliderMinTs).toISOString() : sliderMinTs,
+       currentCursor: Number.isFinite(currentCursorTs) ? new Date(currentCursorTs).toISOString() : currentCursorTs
+     });
+      // Snap to the younger (greater) of video start and slider minimum when both exist
+      let snapTs = null;
+      if (Number.isFinite(videoStart) && Number.isFinite(sliderMinTs)) {
+        snapTs = Math.max(videoStart, sliderMinTs);
+      } else if (Number.isFinite(videoStart)) {
+        snapTs = videoStart;
+      } else if (Number.isFinite(sliderMinTs)) {
+        snapTs = sliderMinTs;
+      } else if (Number.isFinite(currentCursorTs)) {
+        snapTs = currentCursorTs;
+      }
+      if (Number.isFinite(videoStart)) earliestVideoTs = videoStart;
+      if (Number.isFinite(snapTs) && window.setTimelineFromTs) {
+        await window
+          .setTimelineFromTs(snapTs)
+          .catch((err) => console.warn("Timeline sync failed", err));
+      }
+      await openVideoOverlay(bands, baseUrl, idStr, meta);
+      if (!meta) {
+        setVideoStatus("Video metadata not available, using fallback names.");
+      }
+    }
+
+    async function fetchFrpSeries(fireId) {
+      if (!fireId) throw new Error("No fire id");
+      const key = padFireId(fireId);
+      if (!key) throw new Error("Invalid fire id");
+      if (frpCache.has(key)) return frpCache.get(key);
+      const url = `${frpPathBase}${key}.json`;
+      const toNumber = (v) => {
+        const n = Number(v);
+        return Number.isFinite(n) ? n : null;
+      };
+      const p = fetch(url)
+        .then((r) => {
+          if (!r.ok) throw new Error(`HTTP ${r.status}`);
+          return r.json();
+        })
+        .then((data) => {
+          return data
+            .map((d) => ({
+              t: Date.parse(d.t || d.timestamp),
+              frp: (() => {
+                const v = toNumber(d.frp);
+                return v !== null && v > -900 ? v : null;
+              })(),
+              fros: (() => {
+                const v = toNumber(d.fros);
+                return v !== null && v > -900 ? v * 60 : null; // m/s -> m/min
+              })()
+            }))
+            .filter((d) => Number.isFinite(d.t) && (d.frp !== null || d.fros !== null));
+        });
+      frpCache.set(key, p);
+      return p;
+    }
+
+    function renderTimeSeries(canvasId, points, cursorTs, { yLabel, lineColor }) {
+      const canvas = document.getElementById(canvasId);
+      if (!canvas) return;
+      const ctx = canvas.getContext("2d");
+      const width = canvas.clientWidth;
+      const height = canvas.clientHeight;
+      canvas.width = width;
+      canvas.height = height;
+      ctx.clearRect(0, 0, width, height);
+      if (!points || !points.length) return;
+
+      const xs = points.map((p) => p.t);
+      const ys = points.map((p) => p.value);
+      const minX = Number.isFinite(cursorTs) ? Math.min(cursorTs, ...xs) : Math.min(...xs);
+      const maxX = Number.isFinite(cursorTs) ? Math.max(cursorTs, ...xs) : Math.max(...xs);
+      const minY = Math.min(...ys);
+      const maxY = Math.max(...ys);
+      const padY = (maxY - minY) * 0.1 || 1;
+      const y0 = Math.max(0, minY - padY);
+      const y1 = maxY + padY;
+      const margin = { left: 90, right: 42, top: 14, bottom: 34 };
+      const plotW = Math.max(1, width - margin.left - margin.right);
+      const plotH = Math.max(1, height - margin.top - margin.bottom);
+
+      const scaleX = (t) =>
+        margin.left + ((t - minX) / (maxX - minX || 1)) * plotW;
+      const scaleY = (v) =>
+        margin.top + plotH - ((v - y0) / (y1 - y0 || 1)) * plotH;
+
+      ctx.strokeStyle = "#c4c9d1";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(margin.left, margin.top);
+      ctx.lineTo(margin.left, margin.top + plotH);
+      ctx.lineTo(margin.left + plotW, margin.top + plotH);
+      ctx.stroke();
+
+      if (window.currentDayBounds) {
+        const { startMs, endMs } = window.currentDayBounds;
+        if (Number.isFinite(startMs) && Number.isFinite(endMs)) {
+          const x0 = scaleX(startMs);
+          const x1 = scaleX(endMs);
+          ctx.fillStyle = "rgba(14,31,47,0.08)";
+          ctx.fillRect(Math.min(x0, x1), margin.top, Math.abs(x1 - x0), plotH);
+        }
+      }
+
+      ctx.fillStyle = "#5b6776";
+      ctx.font = "11px sans-serif";
+      const yTicks = 5;
+      for (let i = 0; i < yTicks; i++) {
+        const v = y0 + ((y1 - y0) * i) / (yTicks - 1);
+        const y = scaleY(v);
+        ctx.strokeStyle = "#e3e7ec";
+        ctx.beginPath();
+        ctx.moveTo(margin.left - 4, y);
+        ctx.lineTo(margin.left + plotW, y);
+        ctx.stroke();
+        ctx.fillStyle = "#5b6776";
+        ctx.fillText(`${v.toFixed(1)}`, 30, y + 4);
+      }
+
+      const xTicks = 4;
+      ctx.fillStyle = "#5b6776";
+      for (let i = 0; i < xTicks; i++) {
+        const t = minX + ((maxX - minX) * i) / (xTicks - 1 || 1);
+        const x = scaleX(t);
+        ctx.strokeStyle = "#e3e7ec";
+        ctx.beginPath();
+        ctx.moveTo(x, margin.top + plotH);
+        ctx.lineTo(x, margin.top + plotH + 6);
+        ctx.stroke();
+        const d = new Date(t);
+        const label = d.toISOString().replace("T", " ").slice(0, 16);
+        ctx.fillText(label, x - 32, margin.top + plotH + 20);
+      }
+
+      ctx.strokeStyle = lineColor || "#0e1f2f";
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      points.forEach((p, i) => {
+        const x = scaleX(p.t);
+        const y = scaleY(p.value);
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      });
+      ctx.stroke();
+
+      if (Number.isFinite(cursorTs)) {
+        const cx = scaleX(cursorTs);
+        ctx.strokeStyle = "#d7263d";
+        ctx.lineWidth = 1;
+        ctx.setLineDash([4, 4]);
+        ctx.beginPath();
+        ctx.moveTo(cx, margin.top);
+        ctx.lineTo(cx, margin.top + plotH);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+
+      ctx.fillStyle = "#5b6776";
+      ctx.font = "12px sans-serif";
+      ctx.save();
+      ctx.translate(12, margin.top + plotH / 2);
+      ctx.rotate(-Math.PI / 2);
+      ctx.fillText(yLabel, -20, 0);
+      ctx.restore();
+      ctx.fillText("Time (UTC)", margin.left + plotW - 120, height - 6);
+    }
+
+    function renderFrpSeries(series, cursorTs) {
+      const status = frpStatusEl;
+      const title = document.getElementById("frp-title");
+      if (!series || !series.length) {
+        currentFrpSeries = null;
+        if (status) status.textContent = frpDefaultStatus || "Zoom beyond 7, then click a fire event to load its FRP/FROS time series.";
+        if (title) title.textContent = "FRP/FROS time series";
+        renderTimeSeries("frp-canvas", [], cursorTs, { yLabel: "FRP (MW)", lineColor: "#0e1f2f" });
+        renderTimeSeries("fros-canvas", [], cursorTs, { yLabel: "FROS (m/min)", lineColor: "#0d5ed6" });
+        return;
+      }
+      currentFrpSeries = series;
+      const frpPoints = series.filter((p) => p.frp !== null).map((p) => ({ t: p.t, value: p.frp }));
+      const frosPoints = series
+        .filter((p) => p.fros !== null)
+        .map((p) => ({ t: p.t, value: p.fros }));
+      if (!frpPoints.length && status) status.textContent = "FRP series empty.";
+      if (!frpPoints.length && !frosPoints.length && status) status.textContent = "No FRP/FROS values in series.";
+      if (title) {
+        title.textContent = `FRP/FROS time series — ${frpPoints.length} FRP pts, ${frosPoints.length} FROS pts`;
+      }
+      renderTimeSeries("frp-canvas", frpPoints, cursorTs, { yLabel: "FRP (MW)", lineColor: "#0e1f2f" });
+      renderTimeSeries("fros-canvas", frosPoints, cursorTs, { yLabel: "FROS (m/min)", lineColor: "#0d5ed6" });
+      if (status) status.textContent = "";
+    }
+
+    const mapWrapper = document.querySelector(".map-wrapper");
+    const map = new maplibregl.Map({
+      container: "map",
+      hash: true,
+      center: [15, 36.5],
+      zoom: 4,
+      style: {
+        version: 8,
+        sources: {
+          basemap: {
+            type: "raster",
+            tiles: ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
+            tileSize: 256,
+            maxzoom: 19
+          }
+        },
+        layers: [
+          { id: "basemap", type: "raster", source: "basemap", minzoom: 0, maxzoom: 19 }
+        ]
+      }
+    });
+
+    map.on("load", async () => {
+      let usedFallback = false;
+      let manifestData = null;
+      let dayList = [];
+      let activeDayList = [];
+      let currentMonth = "";
+      let currentDayIdx = 0;
+      let currentTimeIdx = 0;
+      let monthLoadToken = 0;
+      h3LayerIds.length = 0;
+      const maskToggle = document.getElementById("mask-toggle");
+      const ensureMaskLayers = async () => {
+        const beforeId = map.getLayer("fires-polygons-outline")
+          ? "fires-polygons-outline"
+          : map.getLayer("fires-polygons")
+          ? "fires-polygons"
+          : map.getLayer("fires-lines")
+          ? "fires-lines"
+          : map.getLayer("fires-points")
+          ? "fires-points"
+          : undefined;
+        if (!map.getSource(maskSourceId)) {
+          await loadPmtiles(maskPmtilesUrl);
+          map.addSource(maskSourceId, {
+            type: "vector",
+            url: `pmtiles://${maskPmtilesUrl}`
+          });
+          console.info("Mask pmtiles loaded", maskPmtilesUrl);
+        }
+        if (!map.getSource(maskBufferSourceId)) {
+          await loadPmtiles(maskBufferPmtilesUrl);
+          map.addSource(maskBufferSourceId, {
+            type: "vector",
+            url: `pmtiles://${maskBufferPmtilesUrl}`
+          });
+          console.info("Mask buffer pmtiles loaded", maskBufferPmtilesUrl);
+        }
+        if (!map.getLayer(maskBufferLayerId)) {
+          map.addLayer(
+            {
+              id: maskBufferLayerId,
+              type: "fill",
+              source: maskBufferSourceId,
+              "source-layer": "mask_buffer",
+              minzoom: 7,
+              maxzoom: 14,
+              paint: {
+                "fill-color": "#0d5ed6",
+                "fill-opacity": 0.1
+              }
+            },
+            beforeId
+          );
+        }
+        if (!map.getLayer(maskLayerId)) {
+          map.addLayer(
+            {
+              id: maskLayerId,
+              type: "fill",
+              source: maskSourceId,
+              "source-layer": "mask",
+              minzoom: 7,
+              maxzoom: 14,
+              paint: {
+                "fill-color": "#0d5ed6",
+                "fill-opacity": 0.4
+              }
+            },
+            beforeId
+          );
+        }
+      };
+      const setMaskVisibility = async (visible) => {
+        if (visible) {
+          await ensureMaskLayers();
+          if (map.getLayer(maskBufferLayerId)) {
+            map.setLayoutProperty(maskBufferLayerId, "visibility", "visible");
+          }
+          if (map.getLayer(maskLayerId)) {
+            map.setLayoutProperty(maskLayerId, "visibility", "visible");
+          }
+        } else {
+          if (map.getLayer(maskBufferLayerId)) {
+            map.setLayoutProperty(maskBufferLayerId, "visibility", "none");
+          }
+          if (map.getLayer(maskLayerId)) {
+            map.setLayoutProperty(maskLayerId, "visibility", "none");
+          }
+        }
+      };
+      if (maskToggle) {
+        maskToggle.addEventListener("change", async (e) => {
+          await setMaskVisibility(e.target.checked);
+        });
+        // If the toggle is pre-checked, load and show the mask on startup.
+        if (maskToggle.checked) {
+          setMaskVisibility(true);
+        }
+      }
+      const domainCoords = [
+        [-10, 29],
+        [40, 29],
+        [40, 47.5],
+        [-10, 47.5],
+        [-10, 29]
+      ];
+      const ensureDomain = () => {
+        if (!map.getSource("domain-box")) {
+          map.addSource("domain-box", {
+            type: "geojson",
+            data: {
+              type: "Feature",
+              geometry: {
+                type: "Polygon",
+                coordinates: [domainCoords]
+              }
+            }
+          });
+        }
+        if (!map.getLayer("domain-box-line")) {
+          map.addLayer({
+            id: "domain-box-line",
+            type: "line",
+            source: "domain-box",
+            paint: {
+              "line-color": "#0d5ed6",
+              "line-width": 3,
+              "line-dasharray": [4, 2]
+            }
+          });
+        }
+      };
+
+      try {
+        // Load manifest early to pick an initial month-specific tileset
+        manifestData = await loadManifestRange();
+        if (manifestData && manifestData.dayList.length) {
+          dayList = manifestData.dayList;
+          earliestTimelineTs = computeEarliestTimelineTs(dayList);
+          const months = Array.from(new Set(dayList.map((d) => d.label.slice(0, 7)))).sort();
+          currentMonth = months[months.length - 1] || "";
+        }
+
+        const initialH3 = currentMonth ? h3UrlForMonth(currentMonth) : h3TilesUrl;
+        const initialPts = currentMonth ? pointsUrlForMonth(currentMonth) : pointsTilesUrl;
+
+        const h3Result = await loadPmtiles(initialH3);
+        usedFallback = usedFallback || h3Result.usedFallback;
+        const pointsResult = await loadPmtiles(initialPts);
+        usedFallback = usedFallback || pointsResult.usedFallback;
+        map.addSource("fires-h3", {
+          type: "vector",
+          url: `pmtiles://${initialH3}`
+        });
+        map.addSource("fires-points", {
+          type: "vector",
+          url: `pmtiles://${initialPts}`
+        });
+        // Single band: res4 across low zooms
+        const h3Bands = [{ id: "h3-r4", res: 4, minzoom: 0, maxzoom: 8 }];
+        h3Bands.forEach(({ id, res, minzoom, maxzoom }) => {
+          map.addLayer({
+            id: `${id}-fill`,
+            type: "fill",
+            source: "fires-h3",
+            "source-layer": "fires_h3",
+            minzoom,
+            maxzoom,
+            filter: ["all", ["==", ["geometry-type"], "Polygon"], ["==", ["get", "res"], res]],
+            paint: {
+              "fill-opacity": 0.6,
+              "fill-color": [
+                "interpolate",
+                ["exponential", 1],
+                ["max", ["coalesce", ["get", "fre_mean_mj"], 0], 0],
+                0, "#d4f1ed",
+                3000, "#d4f1ed",
+                10000, "#1ba7a0",
+                30000, "#f7bd2c",
+                100000, "#f36f1b",
+                300000, "#d7263d"
+              ]
+            }
+          });
+          h3LayerIds.push({ id: `${id}-fill`, res });
+          map.addLayer({
+            id: `${id}-line`,
+            type: "line",
+            source: "fires-h3",
+            "source-layer": "fires_h3",
+            minzoom,
+            maxzoom,
+            filter: ["all", ["==", ["geometry-type"], "Polygon"], ["==", ["get", "res"], res]],
+            paint: {
+              "line-color": "rgba(14,31,47,0.55)",
+              "line-width": 0.6
+            }
+          });
+          h3LayerIds.push({ id: `${id}-line`, res });
+        });
+        map.addLayer({
+          id: "fires-points",
+          type: "circle",
+          source: "fires-points",
+          "source-layer": "fires_points",
+          minzoom: 7,
+          filter: ["==", ["geometry-type"], "Point"],
+          paint: {
+            "circle-radius": [
+              "interpolate",
+              ["linear"],
+              ["zoom"],
+              7, 2.5,
+              12, 5,
+              16, 10
+            ],
+            "circle-color": [
+              "interpolate",
+              ["linear"],
+              ["coalesce", ["get", "frp"], 0],
+              0, "#440154",
+              50, "#3b528b",
+              150, "#21908c",
+              400, "#5dc962",
+              800, "#fde725"
+            ],
+            "circle-opacity": 0.7,
+            "circle-stroke-width": 0.8,
+            "circle-stroke-color": [
+              "interpolate",
+              ["linear"],
+              ["coalesce", ["get", "frp"], 0],
+              0, "#440154",
+              50, "#3b528b",
+              150, "#21908c",
+              400, "#5dc962",
+              800, "#fde725"
+            ]
+          }
+        });
+        map.addLayer({
+          id: "fires-lines",
+          type: "line",
+          source: "fires-points",
+          "source-layer": "fires_points",
+          minzoom: 7,
+          filter: ["match", ["geometry-type"], ["LineString", "MultiLineString"], true, false],
+          paint: {
+            "line-color": [
+              "interpolate",
+              ["linear"],
+              ["coalesce", ["get", "frp"], 0],
+              0, "#440154",
+              100, "#3b528b",
+              500, "#21908c",
+              1000, "#5dc962",
+              10000, "#fde725"
+            ],
+            "line-width": [
+              "interpolate",
+              ["linear"],
+              ["zoom"],
+              7, 2.5,
+              10, 4,
+              14, 6
+            ],
+            "line-opacity": 0.8
+          }
+        });
+        map.addLayer({
+          id: "fires-polygons",
+          type: "fill",
+          source: "fires-points",
+          "source-layer": "fires_points",
+          minzoom: 7,
+          filter: ["match", ["geometry-type"], ["Polygon", "MultiPolygon"], true, false],
+          paint: {
+            "fill-opacity": 0.12,
+            "fill-color": "rgba(255,255,255,0.02)",
+            "fill-outline-color": "rgba(0,0,0,0)"
+          }
+        });
+        map.addLayer({
+          id: "fires-polygons-outline",
+          type: "line",
+          source: "fires-points",
+          "source-layer": "fires_points",
+          minzoom: 7,
+          filter: ["match", ["geometry-type"], ["Polygon", "MultiPolygon"], true, false],
+          paint: {
+            "line-color": [
+              "interpolate",
+              ["linear"],
+              ["coalesce", ["get", "frp"], 0],
+              0, "#440154",
+              100, "#3b528b",
+              500, "#21908c",
+              1000, "#5dc962",
+              10000, "#fde725"
+            ],
+            "line-width": [
+              "interpolate",
+              ["linear"],
+              ["zoom"],
+              7, 2.0,
+              10, 3.4,
+              14, 5.4
+            ],
+            "line-opacity": 0.95
+          }
+        });
+        ensureDomain();
+        map.on("styledata", ensureDomain);
+        console.info("pmtiles loaded", { h3TilesUrl, pointsTilesUrl });
+        if (usedFallback) {
+          console.info("Loaded pmtiles via full fetch; use a server with HTTP byte range support for faster loads.");
+        }
+
+        // Initialize time slider if a manifest is available
+        const dayControl = document.getElementById("day-control");
+        const daySlider = document.getElementById("day-slider");
+        const dayLabelEl = document.getElementById("day-label");
+        const intradayControl = document.getElementById("intraday-control");
+        const timeSlider = document.getElementById("time-slider");
+        const timeLabel = document.getElementById("time-label");
+        const monthSelect = document.getElementById("month-select");
+        const monthStatus = document.getElementById("month-status");
+        const monthProgress = document.getElementById("month-progress");
+        const monthProgressFill = monthProgress ? monthProgress.querySelector(".fill") : null;
+        let intradayHasTimes = false;
+        const toggleTimeControlVisibility = () => {
+          const z = map.getZoom();
+          intradayControl.style.display = intradayHasTimes && z > 7 ? "flex" : "none";
+        };
+        const monthLabel = (val) => (val === "all" ? "all months" : val);
+          const startMonthLoading = (label) => {
+            monthLoadToken += 1;
+            const token = monthLoadToken;
+            if (monthStatus) monthStatus.textContent = `Loading ${label} data...`;
+            if (monthProgress) {
+              monthProgress.classList.add("visible");
+            monthProgress.classList.remove("done");
+          }
+          return token;
+        };
+          const finishMonthLoading = (token) => {
+            if (token !== monthLoadToken) return;
+            if (monthStatus) monthStatus.textContent = "Data ready";
+            if (monthProgress) {
+              monthProgress.classList.add("done");
+              setTimeout(() => {
+              if (token === monthLoadToken) {
+                monthProgress.classList.remove("visible", "done");
+              }
+            }, 700);
+          }
+        };
+          const switchTilesForMonth = async (month, token) => {
+            const nextH3 = h3UrlForMonth(month);
+            const nextPts = pointsUrlForMonth(month);
+            await Promise.all([loadPmtiles(nextH3), loadPmtiles(nextPts)]);
+            const h3Src = map.getSource("fires-h3");
+            const ptsSrc = map.getSource("fires-points");
+            if (h3Src && h3Src.setUrl) h3Src.setUrl(`pmtiles://${nextH3}`);
+            if (ptsSrc && ptsSrc.setUrl) ptsSrc.setUrl(`pmtiles://${nextPts}`);
+          };
+
+        if (manifestData && manifestData.dayList.length) {
+          dayList = manifestData.dayList;
+          const months = Array.from(new Set(dayList.map((d) => d.label.slice(0, 7)))).sort();
+          monthSelect.innerHTML = "";
+          months.forEach((m) => {
+            const opt = document.createElement("option");
+            opt.value = m;
+            opt.textContent = m;
+            monthSelect.appendChild(opt);
+          });
+          if (currentMonth && months.includes(currentMonth)) {
+            monthSelect.value = currentMonth;
+          } else {
+            currentMonth = months[months.length - 1] || "";
+            monthSelect.value = currentMonth;
+          }
+
+          const setActiveDayList = () => {
+            activeDayList =
+              !currentMonth ? dayList : dayList.filter((d) => d.label.startsWith(currentMonth));
+          };
+          const setTimeSliderForDay = () => {
+            const day = activeDayList[currentDayIdx];
+            if (!day) {
+              intradayHasTimes = false;
+              toggleTimeControlVisibility();
+              timeLabel.textContent = "--";
+              return;
+            }
+            const times = day.times;
+            intradayHasTimes = Array.isArray(times) && times.length > 0;
+            toggleTimeControlVisibility();
+            if (!intradayHasTimes) return;
+            timeSlider.min = "0";
+            timeSlider.max = String(times.length - 1);
+            timeSlider.step = "1";
+            currentTimeIdx = times.length - 1;
+            timeSlider.value = String(currentTimeIdx);
+            timeLabel.textContent = new Date(times[currentTimeIdx].ts).toISOString().replace(".000", "");
+          };
+
+          const applyFilters = () => {
+            const day = activeDayList[currentDayIdx];
+            if (!day) {
+              dayControl.style.display = "none";
+              intradayControl.style.display = "none";
+              dayLabelEl.textContent = "--";
+              timeLabel.textContent = "--";
+              window.currentDayBounds = null;
+              currentDayMinTs = null;
+              return;
+            }
+            const times = day.times || [];
+            currentDayMinTs = times.length ? times[0].ts : null;
+            const dayStart = new Date(`${day.label}T00:00:00Z`).getTime();
+            const dayEnd = dayStart + 24 * 60 * 60 * 1000;
+            // Store for FRP chart shading
+            window.currentDayBounds = { startMs: dayStart, endMs: dayEnd };
+            const currentTimeTs = times[currentTimeIdx] ? times[currentTimeIdx].ts : dayEnd;
+      currentCursorTs = currentTimeTs;
+      const filterH3ForRes = (res) => buildH3DayFilter(dayStart, dayEnd, res);
+      const filterPoints = buildRawTimeFilter(dayStart, currentTimeTs, ["Point"]);
+      const filterLines = buildRawTimeFilter(dayStart, currentTimeTs, ["LineString", "MultiLineString"]);
+      const filterPolys = buildRawTimeFilter(dayStart, currentTimeTs, ["Polygon", "MultiPolygon"]);
+          h3LayerIds.forEach(({ id, res }) => map.setFilter(id, filterH3ForRes(res)));
+          if (map.getLayer("fires-points")) map.setFilter("fires-points", filterPoints);
+          if (map.getLayer("fires-lines")) map.setFilter("fires-lines", filterLines);
+            if (map.getLayer("fires-polygons")) map.setFilter("fires-polygons", filterPolys);
+            if (map.getLayer("fires-polygons-outline")) map.setFilter("fires-polygons-outline", filterPolys);
+      dayLabelEl.textContent = day.label;
+      timeLabel.textContent = formatTimeLabel(currentTimeTs);
+      if (currentFrpSeries) {
+        renderFrpSeries(currentFrpSeries, currentCursorTs);
+      }
+      syncVideoToTime();
+      refreshHotspots(currentCursorTs);
+    };
+
+          const refreshDayControls = async () => {
+            setActiveDayList();
+            earliestActiveTimelineTs = computeEarliestTimelineTs(activeDayList);
+            if (!activeDayList.length) {
+              dayControl.style.display = "none";
+              intradayControl.style.display = "none";
+              dayLabelEl.textContent = "No data";
+              timeLabel.textContent = "--";
+              return;
+            }
+            dayControl.style.display = "flex";
+            daySlider.min = "0";
+            daySlider.max = String(activeDayList.length - 1);
+            daySlider.step = "1";
+            currentDayIdx = activeDayList.length - 1;
+            daySlider.value = String(currentDayIdx);
+            if (!currentMonth) {
+              setTimeSliderForDay();
+              applyFilters();
+              toggleTimeControlVisibility();
+              return;
+            }
+            const token = startMonthLoading(monthLabel(currentMonth));
+            try {
+              await switchTilesForMonth(currentMonth, token);
+              setTimeSliderForDay();
+              applyFilters();
+              toggleTimeControlVisibility();
+              map.once("idle", () => finishMonthLoading(token));
+            } catch (err) {
+              console.error("Failed to refresh month", err);
+            }
+          };
+
+          const jumpTimelineToTimestamp = async (ts) => {
+            if (!Number.isFinite(ts) || !dayList.length) return false;
+            const dayLabel = new Date(ts).toISOString().slice(0, 10);
+            const monthLabelVal = dayLabel.slice(0, 7);
+            if (monthSelect && currentMonth !== monthLabelVal) {
+              currentMonth = monthLabelVal;
+              monthSelect.value = monthLabelVal;
+              await refreshDayControls();
+            }
+            setActiveDayList();
+            const idx = activeDayList.findIndex((d) => d.label === dayLabel);
+            if (idx < 0) return false;
+            currentDayIdx = idx;
+            daySlider.value = String(currentDayIdx);
+            setTimeSliderForDay();
+            const times = activeDayList[currentDayIdx].times || [];
+            if (times.length) {
+              const nearest = times.reduce(
+                (best, t, i) => {
+                  const diff = Math.abs(t.ts - ts);
+                  return diff < best.diff ? { diff, i } : best;
+                },
+                { diff: Infinity, i: 0 }
+              );
+              currentTimeIdx = nearest.i;
+              timeSlider.value = String(currentTimeIdx);
+            }
+            applyFilters();
+            toggleTimeControlVisibility();
+            return true;
+          };
+          window.setTimelineFromTs = jumpTimelineToTimestamp;
+
+          refreshDayControls();
+      daySlider.addEventListener("input", (e) => {
+        currentDayIdx = Number(e.target.value);
+        window.currentDayBounds = null;
+        setTimeSliderForDay();
+        applyFilters();
+        syncVideoToTime();
+      });
+      daySlider.addEventListener("change", (e) => {
+        currentDayIdx = Number(e.target.value);
+        window.currentDayBounds = null;
+        setTimeSliderForDay();
+        applyFilters();
+        syncVideoToTime();
+      });
+          timeSlider.addEventListener("input", (e) => {
+            currentTimeIdx = Number(e.target.value);
+            applyFilters();
+            syncVideoToTime();
+          });
+          timeSlider.addEventListener("change", (e) => {
+            currentTimeIdx = Number(e.target.value);
+            applyFilters();
+            syncVideoToTime();
+          });
+          monthSelect.addEventListener("change", (e) => {
+            currentMonth = e.target.value;
+            refreshDayControls();
+          });
+        }
+        map.on("zoom", toggleTimeControlVisibility);
+      } catch (err) {
+        console.error("Failed to load pmtiles", err);
+        const status = document.getElementById("frp-status");
+        if (status) status.textContent = "Failed to load tiles; check dataPath/h3Url/pointsUrl.";
+      }
+    });
+
+    map.on("click", (e) => {
+      if (videoCanvasEl) {
+        return; // disable feature popup when images are loaded
+      }
+      if (!map || !map.isStyleLoaded()) return;
+      const h3Layers = (map.getStyle().layers || [])
+        .map((l) => l.id)
+        .filter((id) => id.startsWith("h3-r"));
+      const rawLayers = ["fires-points", "fires-lines", "fires-polygons", "fires-polygons-outline"];
+      const features = map.queryRenderedFeatures(e.point, { layers: [...h3Layers, ...rawLayers] });
+      if (!features || !features.length) return;
+      const feat = features[0];
+      const props = feat.properties || {};
+      const geomType = feat.geometry && feat.geometry.type;
+
+      if (h3Layers.includes(feat.layer.id)) {
+        const freMean = props.fre_mean_mj ?? "n/a";
+        const freSum = props.fre_sum_mj ?? "n/a";
+        const html = `
+          <div style="font-weight:700;margin-bottom:6px;">H3 ${props.cell || ""}</div>
+          <div><strong>Mean FRE per event (MJ):</strong> ${freMean}</div>
+          <div><strong>Total FRE (MJ):</strong> ${freSum}</div>
+          <div><strong>Count:</strong> ${props.count ?? "n/a"}</div>
+        `;
+        popup.setLngLat(e.lngLat).setHTML(html).addTo(map);
+        return;
+      }
+
+      if (rawLayers.includes(feat.layer.id)) {
+        const fireId = props.id_fire_event ?? "n/a";
+        const frp = props.frp ?? "n/a";
+        const ts = props.time || props.timestamp || "";
+        const container = document.createElement("div");
+        const title = document.createElement("div");
+        title.style.fontWeight = "700";
+        title.style.marginBottom = "6px";
+        title.textContent = geomType || "Feature";
+        const fireIdRow = document.createElement("div");
+        fireIdRow.innerHTML = `<strong>Fire ID:</strong> ${fireId}`;
+        const frpRow = document.createElement("div");
+        frpRow.innerHTML = `<strong>FRP (MW):</strong> ${frp}`;
+        const timeRow = document.createElement("div");
+        timeRow.innerHTML = `<strong>Time:</strong> ${ts}`;
+        container.appendChild(title);
+        container.appendChild(fireIdRow);
+        container.appendChild(frpRow);
+        container.appendChild(timeRow);
+        const actions = document.createElement("div");
+        actions.className = "popup-actions";
+        if (fireId && fireId !== "n/a") {
+          const infoLabel = document.createElement("div");
+          infoLabel.textContent = "Checking videos...";
+          actions.appendChild(infoLabel);
+          loadFetManifest().then((manifestMap) => {
+            // Popup may have closed; guard access
+            if (!actions.isConnected) return;
+            actions.innerHTML = "";
+            if (!manifestMap) {
+              const msg = document.createElement("div");
+              msg.textContent = "Video manifest unavailable.";
+              actions.appendChild(msg);
+              return;
+            }
+            const dir = lookupFetDir(manifestMap, String(fireId));
+            if (!dir) {
+              const msg = document.createElement("div");
+              msg.textContent = "No FCI images processed for this fire.";
+              actions.appendChild(msg);
+              return;
+            }
+            currentHotspotDir = normalizeDirname(dir);
+            const videoBtn = document.createElement("button");
+            videoBtn.type = "button";
+            videoBtn.textContent = "Load FCI images";
+            videoBtn.className = "btn-action";
+            videoBtn.addEventListener("click", (evt) => {
+              evt.preventDefault();
+              lastVideoClickLngLat = e.lngLat;
+              loadVideosForFire(fireId);
+            });
+            actions.appendChild(videoBtn);
+          });
+        }
+        container.appendChild(actions);
+        // Offset popup away from the feature so the perimeter stays visible
+        let popupLngLat = e.lngLat;
+        try {
+          const pt = map && map.project ? map.project(e.lngLat) : null;
+          if (pt && map.unproject) {
+            const shifted = { x: pt.x + 180, y: pt.y - 140 }; // move right/up in pixel space
+            popupLngLat = map.unproject(shifted);
+          }
+        } catch (err) {
+          console.warn("Popup offset failed, using original location", err);
+        }
+        popup.setLngLat(popupLngLat).setDOMContent(container).addTo(map);
+        const key = padFireId(fireId);
+        const status = frpStatusEl;
+        if (!key) {
+          if (status) status.textContent = "No fire id for FRP series.";
+          return;
+        }
+        if (status) status.textContent = "Loading FRP series...";
+        currentFrpSeriesId = key;
+        fetchFrpSeries(fireId)
+          .then((series) => {
+            if (currentFrpSeriesId !== key) return;
+            renderFrpSeries(series, currentCursorTs);
+            if (status) status.textContent = "";
+          })
+          .catch((err) => {
+            if (currentFrpSeriesId !== key) return;
+            if (status) status.textContent = "FRP series not available.";
+            console.warn("FRP load failed", err);
+            renderFrpSeries([], null);
+          });
+        return;
+      }
+    });
+
+    popup.on("close", () => {
+      if (suppressFrpResetOnPopupClose) {
+        suppressFrpResetOnPopupClose = false;
+        return;
+      }
+      renderFrpSeries([], null);
+      if (frpStatusEl) frpStatusEl.textContent = frpDefaultStatus || "";
+      currentFrpSeriesId = null;
+      currentFrpSeries = null;
+      currentCursorTs = null;
+    });
+
+    const zoomDisplay = document.getElementById("zoom-display");
+      map.on("zoom", () => {
+        if (map.getZoom() < 6) {
+          removeVideoOverlay("Video closed (zoom < 6).");
+          renderFrpSeries([], null);
+          if (frpStatusEl) frpStatusEl.textContent = frpDefaultStatus || "";
+          currentFrpSeriesId = null;
+          currentFrpSeries = null;
+          currentCursorTs = null;
+        }
+        zoomDisplay.textContent = `z ${map.getZoom().toFixed(2)}`;
+    });
+    map.on("load", () => {
+      zoomDisplay.textContent = `z ${map.getZoom().toFixed(2)}`;
+    });
+    const coordDisplay = document.getElementById("coord-display");
+    const updateCoordDisplay = (lngLat) => {
+      const loc = lngLat || map.getCenter();
+      if (!loc || typeof loc.lng !== "number" || typeof loc.lat !== "number" || !coordDisplay) return;
+      coordDisplay.textContent = `lon ${loc.lng.toFixed(3)}, lat ${loc.lat.toFixed(3)}`;
+    };
+    map.on("move", () => updateCoordDisplay());
+    map.on("mousemove", (e) => updateCoordDisplay(e && e.lngLat));
+    map.on("load", updateCoordDisplay);
+
+    map.on("error", (e) => {
+      console.error("Map error", e && e.error ? e.error : e);
+    });
+
+    map.addControl(new maplibregl.NavigationControl(), "top-right");
+    map.addControl(new maplibregl.ScaleControl({ maxWidth: 140, unit: "metric" }));
+  </script>
+</body>
+</html>
