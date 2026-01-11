@@ -806,12 +806,15 @@
       }
       // Only use hotspots older than the current time slider, within the last 30 minutes
       const stepMs = 10 * 60 * 1000;
-      const offsets = [0, -stepMs, -2 * stepMs]; // last 30 min (3 files)
+      const floored = Math.floor(ts / stepMs) * stepMs;
+      // Strictly older than the slider time, within the last 30 minutes.
+      const startTs = ts === floored ? floored - stepMs : floored;
+      const offsets = [0, -stepMs, -2 * stepMs];
       const attempted = [];
       const usedFiles = [];
       let feats = [];
       for (const off of offsets) {
-        const tsTry = ts + off;
+        const tsTry = startTs + off;
         const file = formatHotspotFilename(tsTry);
         const url = `${fetViewBase}${currentHotspotDir}/hotspots/${file}`;
         attempted.push({ file, url });
