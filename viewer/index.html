@@ -672,6 +672,35 @@
       return [lng, lat];
     }
 
+    function boundsToCoordsLatLon(lat1, lon1, lat2, lon2) {
+      const south = Math.min(lat1, lat2);
+      const north = Math.max(lat1, lat2);
+      const west = Math.min(lon1, lon2);
+      const east = Math.max(lon1, lon2);
+      return [
+        [west, north],
+        [east, north],
+        [east, south],
+        [west, south]
+      ];
+    }
+
+    function coordsCenter(coords) {
+      if (!Array.isArray(coords) || coords.length !== 4) return null;
+      const sum = coords.reduce(
+        (acc, pair) => [acc[0] + pair[0], acc[1] + pair[1]],
+        [0, 0]
+      );
+      return [sum[0] / 4, sum[1] / 4];
+    }
+
+    function approxDistanceDegrees(a, b) {
+      if (!a || !b) return Infinity;
+      const dx = a[0] - b[0];
+      const dy = a[1] - b[1];
+      return Math.sqrt(dx * dx + dy * dy);
+    }
+
     function earliestFrameTs(meta) {
       if (!meta || !meta.bands) return null;
       let minTs = null;
@@ -777,25 +806,31 @@
       }
       // Only use hotspots older than the current time slider, within the last 30 minutes
       const stepMs = 10 * 60 * 1000;
-      const offsets = [0, -stepMs, -2 * stepMs, -3 * stepMs]; // 0 to -30 min
+      const offsets = [0, -stepMs, -2 * stepMs]; // last 30 min (3 files)
+      const attempted = [];
+      const usedFiles = [];
       let feats = [];
-      let usedFile = null;
       for (const off of offsets) {
         const tsTry = ts + off;
         const file = formatHotspotFilename(tsTry);
         const url = `${fetViewBase}${currentHotspotDir}/hotspots/${file}`;
-      const f = await loadHotspotCsv(url);
-      if (f.length) {
-        feats = f;
-        usedFile = file;
-        break;
+        attempted.push({ file, url });
+        const f = await loadHotspotCsv(url);
+        if (f.length) {
+          usedFiles.push(file);
+          feats = feats.concat(f);
+        }
       }
-    }
-    if (!feats.length) {
-      if (map.getLayer(hotspotLayerId)) map.removeLayer(hotspotLayerId);
-      if (map.getSource(hotspotSourceId)) map.removeSource(hotspotSourceId);
-      return;
-    }
+      console.info("Hotspot files for slider time", {
+        sliderTime: new Date(ts).toISOString(),
+        usedFiles,
+        last3Files: attempted.map((entry) => entry.file)
+      });
+      if (!feats.length) {
+        if (map.getLayer(hotspotLayerId)) map.removeLayer(hotspotLayerId);
+        if (map.getSource(hotspotSourceId)) map.removeSource(hotspotSourceId);
+        return;
+      }
       const geojson = { type: "FeatureCollection", features: feats };
       if (map.getSource(hotspotSourceId)) {
         map.getSource(hotspotSourceId).setData(geojson);
@@ -1053,25 +1088,41 @@
         if (nums) {
           const looksMerc = [a0, a1, b0, b1].some((v) => Math.abs(v) > 180);
           if (looksMerc) {
-            const sw = mercToLngLat(a1, a0);
-            const ne = mercToLngLat(b1, b0);
-            coords = [
-              [sw[0], ne[1]],
-              [ne[0], ne[1]],
-              [ne[0], sw[1]],
-              [sw[0], sw[1]]
+            const swA = mercToLngLat(a1, a0);
+            const neA = mercToLngLat(b1, b0);
+            const coordsA = [
+              [swA[0], neA[1]],
+              [neA[0], neA[1]],
+              [neA[0], swA[1]],
+              [swA[0], swA[1]]
             ];
+            const swB = mercToLngLat(a0, a1);
+            const neB = mercToLngLat(b0, b1);
+            const coordsB = [
+              [swB[0], neB[1]],
+              [neB[0], neB[1]],
+              [neB[0], swB[1]],
+              [swB[0], swB[1]]
+            ];
+            if (lastVideoClickLngLat) {
+              const click = [lastVideoClickLngLat.lng, lastVideoClickLngLat.lat];
+              const dA = approxDistanceDegrees(coordsCenter(coordsA), click);
+              const dB = approxDistanceDegrees(coordsCenter(coordsB), click);
+              coords = dB < dA ? coordsB : coordsA;
+            } else {
+              coords = coordsA;
+            }
           } else {
-            const south = Math.min(a0, b0);
-            const north = Math.max(a0, b0);
-            const west = Math.min(a1, b1);
-            const east = Math.max(a1, b1);
-            coords = [
-              [west, north],
-              [east, north],
-              [east, south],
-              [west, south]
-            ];
+            const coordsA = boundsToCoordsLatLon(a0, a1, b0, b1);
+            const coordsB = boundsToCoordsLatLon(a1, a0, b1, b0);
+            if (lastVideoClickLngLat) {
+              const click = [lastVideoClickLngLat.lng, lastVideoClickLngLat.lat];
+              const dA = approxDistanceDegrees(coordsCenter(coordsA), click);
+              const dB = approxDistanceDegrees(coordsCenter(coordsB), click);
+              coords = dB < dA ? coordsB : coordsA;
+            } else {
+              coords = coordsA;
+            }
           }
         }
       }
