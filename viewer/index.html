@@ -180,9 +180,12 @@
     }
     .control {
       display: flex;
-      align-items: center;
+      align-items: flex-start;
       gap: 10px;
-      min-width: 230px;
+      min-width: 0;
+    }
+    .control--month {
+      align-items: center;
     }
     .control label {
       font-weight: 700;
@@ -198,6 +201,15 @@
     .control input[type="range"] {
       flex: 1;
       accent-color: var(--accent);
+    }
+    .control--month-status {
+      min-width: 0;
+    }
+    .control.is-disabled {
+      opacity: 0.45;
+    }
+    .control.is-disabled input {
+      pointer-events: none;
     }
     .legend-item {
       display: inline-flex;
@@ -293,22 +305,29 @@
         </label>
       </div>
       <div class="controls-row">
-        <div class="control">
+        <div class="control control--month">
           <label for="month-select">Month</label>
-          <select id="month-select">
-          </select>
+          <select id="month-select"></select>
         </div>
-        <div class="control" id="day-control" style="display:none;">
-          <label for="day-slider">Day</label>
-          <input id="day-slider" type="range" min="0" max="1" step="1" value="1">
-          <output id="day-label">--</output>
+        <div class="control" style="flex-direction:column;align-items:stretch;">
+          <div class="control" id="day-control" style="display:none;">
+            <label for="day-slider">Day</label>
+            <input id="day-slider" type="range" min="0" max="1" step="1" value="1">
+            <output id="day-label">--</output>
+          </div>
+          <div class="control" id="intraday-control" style="display:none;">
+            <label for="time-slider">Time</label>
+            <input id="time-slider" type="range" min="0" max="1" step="1" value="1">
+            <output id="time-label">--</output>
+          </div>
         </div>
-        <div class="control" id="intraday-control" style="display:none;">
-          <label for="time-slider">Time</label>
-          <input id="time-slider" type="range" min="0" max="1" step="1" value="1">
-          <output id="time-label">--</output>
+        <div class="control" id="all-day-control">
+          <label style="display:flex;align-items:center;gap:6px;">
+            <input type="checkbox" id="all-day-toggle">
+            All day
+          </label>
         </div>
-        <div style="display:flex;align-items:center;gap:8px;">
+        <div class="control control--month-status">
           <span id="month-status" style="font-size:12px;color:#5b6776;">Idle</span>
           <div class="progress" id="month-progress"><div class="fill"></div></div>
         </div>
@@ -527,7 +546,7 @@
     function formatTimeLabel(epochMs) {
       if (!Number.isFinite(epochMs)) return "--";
       const dt = new Date(epochMs);
-      return dt.toISOString().replace(".000", "");
+      return `${dt.toISOString().slice(11, 19)}Z`;
     }
 
     function buildTimeFilter(epochMs) {
@@ -542,14 +561,64 @@
       return base;
     }
 
-    function buildRawTimeFilter(dayStart, epochMs, geomTypes) {
+    function buildRawTimeFilter(startMs, endMs, geomTypes) {
       const base = ["all", ["match", ["geometry-type"], geomTypes, true, false]];
-      if (Number.isFinite(dayStart)) {
-        base.push([">=", ["coalesce", ["get", "time_ts"], 0], dayStart / 1000]);
-      }
-      if (Number.isFinite(epochMs)) {
-        const seconds = epochMs / 1000;
-        base.push(["<=", ["coalesce", ["get", "time_ts"], seconds], seconds]);
+      if (Number.isFinite(startMs) && Number.isFinite(endMs)) {
+        const startSec = startMs / 1000;
+        const endSec = endMs / 1000;
+        const startIso = new Date(startMs).toISOString().replace(".000", "");
+        const endIso = new Date(endMs).toISOString().replace(".000", "");
+        base.push([
+          "any",
+          [
+            "all",
+            ["has", "time_ts"],
+            ["has", "time_max_ts"],
+            ["<", ["get", "time_ts"], endSec],
+            [">=", ["get", "time_max_ts"], startSec]
+          ],
+          [
+            "all",
+            ["has", "time_ts"],
+            ["!", ["has", "time_max_ts"]],
+            [">=", ["get", "time_ts"], startSec],
+            ["<", ["get", "time_ts"], endSec]
+          ],
+          [
+            "all",
+            ["has", "time"],
+            ["!", ["has", "time_ts"]],
+            [">=", ["get", "time"], startIso],
+            ["<", ["get", "time"], endIso]
+          ],
+          [
+            "all",
+            ["!", ["has", "time_ts"]],
+            ["!", ["has", "time"]],
+            ["has", "time_min_ts"],
+            ["has", "time_max_ts"],
+            ["<", ["get", "time_min_ts"], endSec],
+            [">", ["get", "time_max_ts"], startSec]
+          ]
+        ]);
+      } else if (Number.isFinite(startMs)) {
+        const startSec = startMs / 1000;
+        const startIso = new Date(startMs).toISOString().replace(".000", "");
+        base.push([
+          "any",
+          ["all", ["has", "time_ts"], [">=", ["get", "time_ts"], startSec]],
+          ["all", ["has", "time"], [">=", ["get", "time"], startIso]],
+          ["all", ["!", ["has", "time_ts"]], ["!", ["has", "time"]], ["has", "time_max_ts"], [">", ["get", "time_max_ts"], startSec]]
+        ]);
+      } else if (Number.isFinite(endMs)) {
+        const endSec = endMs / 1000;
+        const endIso = new Date(endMs).toISOString().replace(".000", "");
+        base.push([
+          "any",
+          ["all", ["has", "time_ts"], ["<", ["get", "time_ts"], endSec]],
+          ["all", ["has", "time"], ["<", ["get", "time"], endIso]],
+          ["all", ["!", ["has", "time_ts"]], ["!", ["has", "time"]], ["has", "time_min_ts"], ["<", ["get", "time_min_ts"], endSec]]
+        ]);
       }
       return base;
     }
@@ -744,16 +813,43 @@
     function parseHotspotCsv(text) {
       const lines = text.trim().split(/\r?\n/);
       if (lines.length < 2) return [];
-      const headers = lines[0].split(",");
-      const idxLat = headers.indexOf("LATITUDE_PARALLAX");
-      const idxLng = headers.indexOf("LONGITUDE_PARALLAX");
+      const headerLine = lines[0];
+      const delimiter = headerLine.includes(";") && !headerLine.includes(",") ? ";" : ",";
+      const splitLine = (line) =>
+        line.split(delimiter).map((val) => val.replace(/^"(.*)"$/, "$1").trim());
+      const headers = splitLine(headerLine);
+      const latHeaders = [
+        "LATITUDE",
+        "LAT",
+        "LATITUDE_CENTER",
+        "LATITUDE_CENTRE",
+        "LATITUDE_PARALLAX"
+      ];
+      const lonHeaders = [
+        "LONGITUDE",
+        "LON",
+        "LONGITUDE_CENTER",
+        "LONGITUDE_CENTRE",
+        "LONGITUDE_PARALLAX"
+      ];
+      const indexByName = new Map(headers.map((h, i) => [h, i]));
+      const pickValue = (row, names) => {
+        for (const name of names) {
+          const idx = indexByName.get(name);
+          if (idx === undefined) continue;
+          const raw = row[idx];
+          const num = Number(raw);
+          if (Number.isFinite(num)) return num;
+        }
+        return null;
+      };
       const idxFrp = headers.indexOf("FRP");
       const idxTime = headers.indexOf("ACQTIME");
       const feats = [];
       for (let i = 1; i < lines.length; i++) {
-        const cols = lines[i].split(",");
-        const lat = Number(cols[idxLat]);
-        const lng = Number(cols[idxLng]);
+        const cols = splitLine(lines[i]);
+        const lat = pickValue(cols, latHeaders);
+        const lng = pickValue(cols, lonHeaders);
         if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
         const frp = idxFrp >= 0 ? Number(cols[idxFrp]) : null;
         const acq = idxTime >= 0 ? cols[idxTime] : "";
@@ -806,12 +902,12 @@
       }
       // Only use hotspots older than the current time slider, within the last 30 minutes
       const stepMs = 10 * 60 * 1000;
-      const floored = Math.floor(ts / stepMs) * stepMs;
-      // Strictly older than the slider time, within the last 30 minutes.
-      const startTs = ts === floored ? floored - stepMs : floored;
-      const offsets = [0, -stepMs, -2 * stepMs];
+      const startTs = Math.floor(ts / stepMs) * stepMs;
+      // Current 30-minute window starting at the slider time bucket.
+      const offsets = [0, stepMs, 2 * stepMs];
       const attempted = [];
       const usedFiles = [];
+      const fileCounts = [];
       let feats = [];
       for (const off of offsets) {
         const tsTry = startTs + off;
@@ -819,15 +915,15 @@
         const url = `${fetViewBase}${currentHotspotDir}/hotspots/${file}`;
         attempted.push({ file, url });
         const f = await loadHotspotCsv(url);
-        if (f.length) {
-          usedFiles.push(file);
-          feats = feats.concat(f);
-        }
+        usedFiles.push(file);
+        fileCounts.push({ file, count: f.length });
+        if (f.length) feats = feats.concat(f);
       }
       console.info("Hotspot files for slider time", {
         sliderTime: new Date(ts).toISOString(),
         usedFiles,
-        last3Files: attempted.map((entry) => entry.file)
+        last3Files: attempted.map((entry) => entry.file),
+        fileCounts
       });
       if (!feats.length) {
         if (map.getLayer(hotspotLayerId)) map.removeLayer(hotspotLayerId);
@@ -1237,10 +1333,10 @@
       });
       // Insert video very low; fire geojson, hotspots, and masks render above
       const beforeId =
-        (map.getLayer("fires-polygons-outline") && "fires-polygons-outline") ||
-        (map.getLayer("fires-polygons") && "fires-polygons") ||
-        (map.getLayer("fires-lines") && "fires-lines") ||
         (map.getLayer("fires-points") && "fires-points") ||
+        (map.getLayer("fires-lines") && "fires-lines") ||
+        (map.getLayer("fires-polygons") && "fires-polygons") ||
+        (map.getLayer("fires-polygons-outline") && "fires-polygons-outline") ||
         (map.getLayer(hotspotLayerId) && hotspotLayerId) ||
         (map.getLayer(maskLayerId) && maskLayerId) ||
         (map.getLayer(maskBufferLayerId) && maskBufferLayerId) ||
@@ -1460,11 +1556,9 @@
        sliderMin: Number.isFinite(sliderMinTs) ? new Date(sliderMinTs).toISOString() : sliderMinTs,
        currentCursor: Number.isFinite(currentCursorTs) ? new Date(currentCursorTs).toISOString() : currentCursorTs
      });
-      // Snap to the younger (greater) of video start and slider minimum when both exist
+      // Snap to the video start when available, even if it's before the current slider range.
       let snapTs = null;
-      if (Number.isFinite(videoStart) && Number.isFinite(sliderMinTs)) {
-        snapTs = Math.max(videoStart, sliderMinTs);
-      } else if (Number.isFinite(videoStart)) {
+      if (Number.isFinite(videoStart)) {
         snapTs = videoStart;
       } else if (Number.isFinite(sliderMinTs)) {
         snapTs = sliderMinTs;
@@ -2000,14 +2094,24 @@
         const intradayControl = document.getElementById("intraday-control");
         const timeSlider = document.getElementById("time-slider");
         const timeLabel = document.getElementById("time-label");
+        const allDayToggle = document.getElementById("all-day-toggle");
         const monthSelect = document.getElementById("month-select");
         const monthStatus = document.getElementById("month-status");
         const monthProgress = document.getElementById("month-progress");
         const monthProgressFill = monthProgress ? monthProgress.querySelector(".fill") : null;
         let intradayHasTimes = false;
+        let showAllDay = false;
         const toggleTimeControlVisibility = () => {
           const z = map.getZoom();
           intradayControl.style.display = intradayHasTimes && z > 7 ? "flex" : "none";
+        };
+        const updateTimeControlState = () => {
+          const disabled = showAllDay;
+          timeSlider.disabled = disabled;
+          intradayControl.classList.toggle("is-disabled", disabled);
+          if (disabled) {
+            timeLabel.textContent = "All day";
+          }
         };
         const monthLabel = (val) => (val === "all" ? "all months" : val);
           const startMonthLoading = (label) => {
@@ -2081,6 +2185,7 @@
             currentTimeIdx = times.length - 1;
             timeSlider.value = String(currentTimeIdx);
             timeLabel.textContent = new Date(times[currentTimeIdx].ts).toISOString().replace(".000", "");
+            updateTimeControlState();
           };
 
           const applyFilters = () => {
@@ -2101,18 +2206,31 @@
             // Store for FRP chart shading
             window.currentDayBounds = { startMs: dayStart, endMs: dayEnd };
             const currentTimeTs = times[currentTimeIdx] ? times[currentTimeIdx].ts : dayEnd;
-      currentCursorTs = currentTimeTs;
+      const bucketMs = 30 * 60 * 1000;
+      const bucketStart = showAllDay
+        ? dayStart
+        : Number.isFinite(currentTimeTs)
+        ? Math.floor(currentTimeTs / bucketMs) * bucketMs
+        : currentTimeTs;
+      const bucketEnd = showAllDay
+        ? dayEnd
+        : Number.isFinite(bucketStart)
+        ? Math.min(dayEnd, bucketStart + bucketMs)
+        : dayEnd;
+      currentCursorTs = bucketStart;
       const filterH3ForRes = (res) => buildH3DayFilter(dayStart, dayEnd, res);
-      const filterPoints = buildRawTimeFilter(dayStart, currentTimeTs, ["Point"]);
-      const filterLines = buildRawTimeFilter(dayStart, currentTimeTs, ["LineString", "MultiLineString"]);
-      const filterPolys = buildRawTimeFilter(dayStart, currentTimeTs, ["Polygon", "MultiPolygon"]);
+      const filterPoints = buildRawTimeFilter(bucketStart, bucketEnd, ["Point"]);
+      const filterLines = buildRawTimeFilter(bucketStart, bucketEnd, ["LineString", "MultiLineString"]);
+      const filterPolys = buildRawTimeFilter(bucketStart, bucketEnd, ["Polygon", "MultiPolygon"]);
           h3LayerIds.forEach(({ id, res }) => map.setFilter(id, filterH3ForRes(res)));
           if (map.getLayer("fires-points")) map.setFilter("fires-points", filterPoints);
           if (map.getLayer("fires-lines")) map.setFilter("fires-lines", filterLines);
             if (map.getLayer("fires-polygons")) map.setFilter("fires-polygons", filterPolys);
             if (map.getLayer("fires-polygons-outline")) map.setFilter("fires-polygons-outline", filterPolys);
-      dayLabelEl.textContent = day.label;
-      timeLabel.textContent = formatTimeLabel(currentTimeTs);
+      dayLabelEl.textContent = `${day.label}T`;
+      if (!showAllDay) {
+        timeLabel.textContent = formatTimeLabel(currentTimeTs);
+      }
       if (currentFrpSeries) {
         renderFrpSeries(currentFrpSeries, currentCursorTs);
       }
@@ -2216,6 +2334,13 @@
             currentMonth = e.target.value;
             refreshDayControls();
           });
+          if (allDayToggle) {
+            allDayToggle.addEventListener("change", () => {
+              showAllDay = allDayToggle.checked;
+              updateTimeControlState();
+              applyFilters();
+            });
+          }
         }
         map.on("zoom", toggleTimeControlVisibility);
       } catch (err) {
@@ -2257,6 +2382,16 @@
         const fireId = props.id_fire_event ?? "n/a";
         const frp = props.frp ?? "n/a";
         const ts = props.time || props.timestamp || "";
+        const startTsVal = props.time_min_ts ?? props.time_start_ts ?? props.time_start ?? null;
+        const endTsVal = props.time_max_ts ?? props.time_end_ts ?? props.time_end ?? null;
+        const startIso = Number.isFinite(startTsVal) ? new Date(startTsVal * 1000).toISOString() : startTsVal;
+        const endIso = Number.isFinite(endTsVal) ? new Date(endTsVal * 1000).toISOString() : endTsVal;
+        console.info("Fire feature time range", {
+          fireId,
+          start: startIso ?? "n/a",
+          end: endIso ?? "n/a",
+          time: ts || "n/a"
+        });
         const container = document.createElement("div");
         const title = document.createElement("div");
         title.style.fontWeight = "700";

@@ -28,6 +28,22 @@ export PATH='/home/paugam/Installed_Lib/PMTILES/':$PATH
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 OUT_DIR="${ROOT_DIR}/tiles"
+SIM_NAME="${SIM_NAME:-MEDpc}"
+STATS_DIR="/media/paugam/gast/FCI/${SIM_NAME}_fire_events/Stats"
+STATS_GDF="${STATS_GDF:-}"
+if [[ -z "${STATS_GDF}" ]]; then
+  if [[ -n "${SIM_START:-}" && -n "${SIM_END:-}" ]]; then
+    STATS_GDF="${STATS_DIR}/${SIM_NAME}-gdf_${SIM_START}_${SIM_END}.geojson"
+  else
+    STATS_GDF="$(ls -1t "${STATS_DIR}/${SIM_NAME}-gdf_"*.geojson 2>/dev/null | head -n 1 || true)"
+  fi
+fi
+STATS_ARG=()
+if [[ -n "${STATS_GDF}" && -f "${STATS_GDF}" ]]; then
+  STATS_ARG=(--stats-gdf "${STATS_GDF}")
+else
+  echo "WARNING: stats GeoJSON not found; end times will not be added (${STATS_GDF})." >&2
+fi
 
 MAX_ZOOM="${MAX_ZOOM:-11}"          # tippecanoe max zoom for raw layer
 RAW_MIN_ZOOM="${RAW_MIN_ZOOM:-7}"   # tippecanoe min zoom for raw layer (shows at z≥7)
@@ -91,12 +107,14 @@ for MONTH in "${MONTHS[@]}"; do
 
   echo "Building H3-only tiles for ${MONTH} -> ${OUT_H3_PM}"
   python "${ROOT_DIR}/scripts/stream_features_h3.py" \
+    --data-dir "${ROOT_DIR}/GeoJson-per-event" \
     --h3-res "${H3_RES}" \
     --low-zoom-max "${LOW_ZOOM_MAX}" \
     --high-zoom-min "${HIGH_ZOOM_MIN}" \
     --omit-raw \
     --start-date "${START}" \
     --end-date "${END}" \
+    "${STATS_ARG[@]}" \
     | tippecanoe \
       -o "${OUT_H3_MB}" \
       -Z "${H3_MIN_ZOOM}" \
@@ -113,8 +131,10 @@ for MONTH in "${MONTHS[@]}"; do
 
   echo "Building raw-point tiles for ${MONTH} -> ${OUT_POINTS_PM}"
   python "${ROOT_DIR}/scripts/stream_features.py" \
+    --data-dir "${ROOT_DIR}/GeoJson-per-event" \
     --start-date "${START}" \
     --end-date "${END}" \
+    "${STATS_ARG[@]}" \
     | tippecanoe \
       -o "${OUT_POINTS_MB}" \
       -Z "${RAW_MIN_ZOOM}" \

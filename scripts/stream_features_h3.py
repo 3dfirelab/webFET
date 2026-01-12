@@ -14,6 +14,8 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import re
+import pyproj
 from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime, timezone, timedelta, date
@@ -24,6 +26,8 @@ import h3
 
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_DATA_DIR = ROOT / "GeoJson"
+ID_RE = re.compile(r"^gdf_(\d+)\.geojson$")
+CRS_RE = re.compile(r"EPSG::?(\d+)")
 
 
 @dataclass
@@ -48,6 +52,56 @@ class Aggregate:
     fire_ids: set = field(default_factory=set)
 
 
+def build_transformer(crs_name: str | None) -> pyproj.Transformer | None:
+    if not crs_name:
+        return None
+    match = CRS_RE.search(crs_name)
+    if not match:
+        return None
+    epsg = int(match.group(1))
+    if epsg == 4326:
+        return None
+    return pyproj.Transformer.from_crs(f"EPSG:{epsg}", "EPSG:4326", always_xy=True)
+
+
+def transform_coords(coords, transformer: pyproj.Transformer):
+    if isinstance(coords, (list, tuple)) and coords and isinstance(coords[0], (int, float)):
+        x, y = coords[0], coords[1]
+        x2, y2 = transformer.transform(x, y)
+        tail = list(coords[2:]) if len(coords) > 2 else []
+        return [x2, y2, *tail]
+    if isinstance(coords, (list, tuple)):
+        return [transform_coords(c, transformer) for c in coords]
+    return coords
+
+
+def transform_geometry(geom: dict, transformer: pyproj.Transformer) -> dict:
+    coords = geom.get("coordinates")
+    if coords is None:
+        return geom
+    return {**geom, "coordinates": transform_coords(coords, transformer)}
+
+
+def compute_time_floor_range(data: dict) -> Tuple[str | None, float | None, str | None, float | None]:
+    min_ts = None
+    max_ts = None
+    for feat in data.get("features", []):
+        props = feat.get("properties") or {}
+        raw = props.get("time_floor") or props.get("time") or props.get("timestamp")
+        _, ts = parse_timestamp(raw)
+        if ts is None:
+            continue
+        if min_ts is None or ts < min_ts:
+            min_ts = ts
+        if max_ts is None or ts > max_ts:
+            max_ts = ts
+    if min_ts is None or max_ts is None:
+        return None, None, None, None
+    min_iso = datetime.fromtimestamp(min_ts, tz=timezone.utc).isoformat().replace("+00:00", "Z")
+    max_iso = datetime.fromtimestamp(max_ts, tz=timezone.utc).isoformat().replace("+00:00", "Z")
+    return min_iso, min_ts, max_iso, max_ts
+
+
 def iter_features(data_dir: Path) -> Iterator[dict]:
     for path in sorted(data_dir.glob("*.geojson")):
         try:
@@ -56,9 +110,37 @@ def iter_features(data_dir: Path) -> Iterator[dict]:
         except Exception as exc:  # pragma: no cover
             print(f"Skipping {path.name}: {exc}", file=sys.stderr)
             continue
+        crs_name = None
+        crs = data.get("crs") or {}
+        if isinstance(crs, dict):
+            props = crs.get("properties") or {}
+            crs_name = props.get("name") or crs.get("name")
+        elif isinstance(crs, str):
+            crs_name = crs
+        transformer = build_transformer(crs_name)
+        file_id = None
+        match = ID_RE.match(path.name)
+        if match:
+            file_id = match.group(1)
+        min_iso, min_ts, max_iso, max_ts = compute_time_floor_range(data)
         for feature in data.get("features", []):
-            if isinstance(feature, dict):
-                yield feature
+            if not isinstance(feature, dict):
+                continue
+            props = feature.get("properties") or {}
+            if file_id and "id_fire_event" not in props:
+                props = dict(props)
+                props["id_fire_event"] = file_id
+                if min_ts is not None and max_ts is not None:
+                    props["time_min_ts"] = min_ts
+                    props["time_max_ts"] = max_ts
+                    props["time_min"] = min_iso
+                    props["time_max"] = max_iso
+                feature = dict(feature)
+                feature["properties"] = props
+            if transformer and isinstance(feature.get("geometry"), dict):
+                feature = dict(feature)
+                feature["geometry"] = transform_geometry(feature["geometry"], transformer)
+            yield feature
 
 
 def extract_lonlat(feature: dict) -> Tuple[float, float] | None:
@@ -111,6 +193,31 @@ def parse_timestamp(raw: str | None) -> Tuple[str | None, float | None]:
         return raw, None
 
 
+def load_stats_map(path: Path | None) -> Dict[str, Dict]:
+    if path is None or not path.is_file():
+        return {}
+    try:
+        data = json.loads(path.read_text())
+    except Exception as exc:  # pragma: no cover
+        print(f"Warning: failed to read stats file {path}: {exc}", file=sys.stderr)
+        return {}
+    mapping: Dict[str, Dict] = {}
+    for feature in data.get("features", []):
+        props = feature.get("properties") or {}
+        fire_id = props.get("fire_event_id") or props.get("id_fire_event")
+        if fire_id is None:
+            continue
+        start_iso, start_ts = parse_timestamp(props.get("time_start"))
+        end_iso, end_ts = parse_timestamp(props.get("time_end"))
+        mapping[str(fire_id)] = {
+            "time_start": start_iso,
+            "time_end": end_iso,
+            "time_start_ts": start_ts,
+            "time_end_ts": end_ts,
+        }
+    return mapping
+
+
 def day_bucket(ts: float) -> Tuple[str, float, float]:
     """Return day label (YYYY-MM-DD) and start/end epoch seconds for UTC day."""
     dt = datetime.fromtimestamp(ts, tz=timezone.utc)
@@ -143,11 +250,24 @@ def normalize_fros(value) -> float | None:
     return fros_val
 
 
-def add_tippecanoe_minzoom(feature: dict, minzoom: int) -> dict:
+def add_tippecanoe_minzoom(feature: dict, minzoom: int, stats: Dict | None = None) -> dict:
     props = dict(feature.get("properties") or {})
-    ts_str, ts_epoch = parse_timestamp(props.get("time") or props.get("timestamp"))
+    ts_str, ts_epoch = parse_timestamp(
+        props.get("time_floor") or props.get("time") or props.get("timestamp")
+    )
     if ts_epoch is not None:
         props["time_ts"] = ts_epoch
+        if "time_floor" in props:
+            props["time"] = props["time_floor"]
+    if stats and "time_min_ts" not in props:
+        if stats.get("time_start_ts") is not None:
+            props["time_min_ts"] = stats["time_start_ts"]
+        if stats.get("time_end_ts") is not None:
+            props["time_max_ts"] = stats["time_end_ts"]
+        if stats.get("time_start"):
+            props["time_min"] = stats["time_start"]
+        if stats.get("time_end"):
+            props["time_max"] = stats["time_end"]
     props["tippecanoe"] = {"minzoom": minzoom}
     return {"type": "Feature", "properties": props, "geometry": feature.get("geometry")}
 
@@ -206,6 +326,7 @@ def stream(
     include_raw: bool,
     start_ts: float | None = None,
     end_ts: float | None = None,
+    stats_map: Dict[str, Dict] | None = None,
 ) -> Iterable[dict]:
     # Key H3 aggregates by (resolution, cell, day_start_ts) so FRP sums stay per day slice
     summary: Dict[Tuple[int, str, float], Aggregate] = defaultdict(Aggregate)
@@ -221,7 +342,7 @@ def stream(
         frp = float(props.get("frp") or 0.0)
         # FRP is MW; FRE (MJ) over 10 minutes (600s) => frp * 600
         fre = frp * 600.0
-        timestamp_raw = props.get("time") or props.get("timestamp")
+        timestamp_raw = props.get("time_floor") or props.get("time") or props.get("timestamp")
         ts_str, ts_epoch = parse_timestamp(timestamp_raw)
         if ts_epoch is not None:
             if start_ts is not None and ts_epoch < start_ts:
@@ -260,7 +381,8 @@ def stream(
                 agg.time_max_ts = day_end_ts if agg.time_max_ts is None else agg.time_max_ts
 
         if include_raw:
-            yield add_tippecanoe_minzoom(feature, high_zoom_min)
+            stats = stats_map.get(fire_id) if stats_map else None
+            yield add_tippecanoe_minzoom(feature, high_zoom_min, stats)
 
     for (res, cell, _), stats in summary.items():
         yield build_h3_feature(cell, stats, low_zoom_max)
@@ -298,6 +420,12 @@ def main() -> None:
         default=None,
         help="ISO date YYYY-MM-DD inclusive (UTC). Internally uses next-day boundary.",
     )
+    parser.add_argument(
+        "--stats-gdf",
+        type=Path,
+        default=None,
+        help="Optional GeoJSON stats file with time_start/time_end per fire_event_id.",
+    )
 
     args = parser.parse_args()
 
@@ -308,6 +436,8 @@ def main() -> None:
         end_dt = datetime.fromtimestamp(args.end_date, tz=timezone.utc) + timedelta(days=1)
         end_ts = end_dt.timestamp()
 
+    stats_map = load_stats_map(args.stats_gdf)
+
     try:
         for feature in stream(
             args.data_dir,
@@ -317,6 +447,7 @@ def main() -> None:
             include_raw=not args.omit_raw,
             start_ts=start_ts,
             end_ts=end_ts,
+            stats_map=stats_map,
         ):
             sys.stdout.write(json.dumps(feature, separators=(",", ":")))
             sys.stdout.write("\n")
