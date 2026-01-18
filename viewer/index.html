@@ -157,6 +157,25 @@
       gap: 8px;
       flex-wrap: wrap;
     }
+    .video-progress {
+      width: 100%;
+      height: 8px;
+      background: rgba(14,31,47,0.08);
+      border-radius: 999px;
+      overflow: hidden;
+    }
+    .video-progress .fill {
+      height: 100%;
+      width: 100%;
+      transform-origin: left;
+      transform: scaleX(0);
+      background: linear-gradient(90deg, #1ba7a0, #f36f1b);
+      transition: transform 0.2s ease;
+    }
+    .video-progress.is-indeterminate .fill {
+      animation: loading-stripe 1.2s linear infinite;
+      transform: translateX(-100%);
+    }
     .panel {
       background: var(--panel);
       border-radius: 14px;
@@ -165,6 +184,56 @@
       display: flex;
       flex-direction: column;
       gap: 10px;
+    }
+    .fci-panel__header {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px 12px;
+    }
+    .fci-panel__header h3 {
+      margin: 0;
+      font-size: 15px;
+      letter-spacing: -0.01em;
+    }
+    #fci-links-status {
+      font-size: 12px;
+      color: #5b6776;
+    }
+    .fci-links {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .fci-link-item {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      padding: 10px 12px;
+      border-radius: 12px;
+      background: rgba(14, 31, 47, 0.04);
+      border: 1px solid rgba(14, 31, 47, 0.08);
+    }
+    .fci-link-title {
+      font-weight: 700;
+      color: #1f2c3a;
+    }
+    .fci-link-meta {
+      font-size: 12px;
+      color: #5b6776;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 16px;
+    }
+    .fci-link-item a {
+      color: #0d5ed6;
+      font-weight: 600;
+      text-decoration: none;
+      word-break: break-all;
+    }
+    .fci-link-item a:hover {
+      text-decoration: underline;
     }
     .legend-row-inline {
       display: flex;
@@ -323,7 +392,7 @@
         </div>
         <div class="control" id="all-day-control">
           <label style="display:flex;align-items:center;gap:6px;">
-            <input type="checkbox" id="all-day-toggle">
+            <input type="checkbox" id="all-day-toggle" checked>
             All day
           </label>
         </div>
@@ -338,10 +407,10 @@
       <div id="map"></div>
       <div class="zoom-display" id="zoom-display">z --</div>
       <div class="coord-display" id="coord-display">lon --, lat --</div>
-    </div>
+      </div>
       <div class="frp-panel">
       <h3 id="frp-title">FRP/FROS time series</h3>
-      <div id="frp-status">Zoom beyond 7, then click a fire event to load its FRP/FROS time series.</div>
+      <div id="frp-status">Zoom beyond 6, then click a fire event to load its FRP/FROS time series.</div>
           <div class="frp-body">
           <div class="frp-charts">
             <canvas id="frp-canvas" width="800" height="140"></canvas>
@@ -356,6 +425,13 @@
             <div style="font-size:12px;color:#5b6776;margin-top:4px;">FRP (MW)</div>
           </div>
         </div>
+      </div>
+      <div class="panel fci-panel">
+        <div class="fci-panel__header">
+          <h3>Fire Event with FCI images available</h3>
+          <span id="fci-links-status">Loading FCI events...</span>
+        </div>
+        <div class="fci-links" id="fci-links"></div>
       </div>
   </div>
   <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
@@ -423,7 +499,10 @@
     ];
     const frpStatusEl = document.getElementById("frp-status");
     const frpDefaultStatus = frpStatusEl ? frpStatusEl.textContent : "";
+    const fciLinksStatusEl = document.getElementById("fci-links-status");
+    const fciLinksListEl = document.getElementById("fci-links");
     const fetManifestCache = { promise: null };
+    const fetManifestListCache = { promise: null };
     const fetVideoMetaCache = new Map();
     let currentVideoFireId = null;
     let videoLoadToken = 0;
@@ -451,6 +530,11 @@
     const hotspotLayerId = "fire-hotspots-layer";
     let suppressFrpResetOnPopupClose = false;
     let earliestTimelineTs = null;
+    let videoBandToken = 0;
+    let videoDownloadController = null;
+    let currentVideoObjectUrl = null;
+    let videoProgressCb = null;
+    let unsetAllDay = null;
     maplibregl.addProtocol("pmtiles", protocol.tile);
     const popup = new maplibregl.Popup({ closeButton: true, closeOnClick: true });
     const frpCache = new Map();
@@ -547,6 +631,32 @@
       if (!Number.isFinite(epochMs)) return "--";
       const dt = new Date(epochMs);
       return `${dt.toISOString().slice(11, 19)}Z`;
+    }
+
+    function parseUrlTimeParam(value) {
+      if (!value) return null;
+      const trimmed = String(value).trim();
+      if (!trimmed) return null;
+      const asNumber = Number(trimmed);
+      if (Number.isFinite(asNumber)) {
+        return asNumber > 1e12 ? asNumber : asNumber * 1000;
+      }
+      const asDate = Date.parse(trimmed);
+      return Number.isFinite(asDate) ? asDate : null;
+    }
+
+    function formatUrlTime(epochMs) {
+      if (!Number.isFinite(epochMs)) return null;
+      const dt = new Date(epochMs);
+      return dt.toISOString().replace(".000", "");
+    }
+
+    function updateUrlTimeParam(epochMs) {
+      const formatted = formatUrlTime(epochMs);
+      if (!formatted) return;
+      const nextUrl = new URL(window.location.href);
+      nextUrl.searchParams.set("time", formatted);
+      history.replaceState(null, "", nextUrl.toString());
     }
 
     function buildTimeFilter(epochMs) {
@@ -688,6 +798,21 @@
       return fetManifestCache.promise;
     }
 
+    async function loadFetManifestList() {
+      if (fetManifestListCache.promise) return fetManifestListCache.promise;
+      fetManifestListCache.promise = fetch(fetViewManifestUrl, { cache: "no-cache" })
+        .then((resp) => {
+          if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+          return resp.json();
+        })
+        .then((list) => (Array.isArray(list) ? list : []))
+        .catch((err) => {
+          console.warn("FETView manifest list load failed", err);
+          return [];
+        });
+      return fetManifestListCache.promise;
+    }
+
     function lookupFetDir(manifestMap, idStr) {
       if (!manifestMap || !idStr) return null;
       const padded = padFireId(idStr);
@@ -714,13 +839,19 @@
     }
 
     function buildBandList(meta) {
+      const bandLabel = (key) => {
+        const norm = String(key || "").toLowerCase();
+        if (norm === "b07") return "MWIR (B07)";
+        if (norm === "b13") return "LWIR (B13)";
+        return key;
+      };
       const entries = Object.entries((meta && meta.bands) || {}).filter(
         ([, info]) => info && info.video
       );
       if (entries.length) {
         return entries.map(([key, info]) => ({
           key,
-          label: key,
+          label: bandLabel(key),
           video: info.video,
           bounds: info.bounds || info.boundsWebMercator || null
         }));
@@ -728,7 +859,7 @@
       const fallbackBands = ["rgb", "b07", "b13"];
       return fallbackBands.map((key) => ({
         key,
-        label: key.toUpperCase(),
+        label: bandLabel(key),
         video: `media/${key}.webm`,
         bounds: null
       }));
@@ -761,6 +892,131 @@
         [0, 0]
       );
       return [sum[0] / 4, sum[1] / 4];
+    }
+
+    function extractMetaCenter(meta) {
+      const bands = (meta && meta.bands) || {};
+      const preferred = ["RGB", "rgb", "B07", "b07", "B13", "b13"];
+      const entries = [];
+      preferred.forEach((key) => {
+        if (bands[key]) entries.push(bands[key]);
+      });
+      Object.keys(bands).forEach((key) => {
+        if (!preferred.includes(key)) entries.push(bands[key]);
+      });
+      for (const info of entries) {
+        const raw = (info && info.bounds) || (info && info.boundsWebMercator) || null;
+        if (!raw || !Array.isArray(raw) || raw.length !== 2) continue;
+        let [[a0, a1], [b0, b1]] = raw;
+        const nums = [a0, a1, b0, b1].every((v) => Number.isFinite(v));
+        if (!nums) continue;
+        const looksMerc = [a0, a1, b0, b1].some((v) => Math.abs(v) > 180);
+        let coords = null;
+        if (looksMerc) {
+          const sw = mercToLngLat(a1, a0);
+          const ne = mercToLngLat(b1, b0);
+          coords = [
+            [sw[0], ne[1]],
+            [ne[0], ne[1]],
+            [ne[0], sw[1]],
+            [sw[0], sw[1]]
+          ];
+        } else {
+          coords = boundsToCoordsLatLon(a0, a1, b0, b1);
+        }
+        const center = coordsCenter(coords);
+        if (center && center.length === 2) {
+          return { lng: center[0], lat: center[1] };
+        }
+      }
+      return null;
+    }
+
+    function extractEarliestIso(meta) {
+      const bands = (meta && meta.bands) || {};
+      const timestamps = [];
+      Object.values(bands).forEach((info) => {
+        const frames = (info && info.frames) || [];
+        frames.forEach((frame) => {
+          const ts = frame && frame.iso ? Date.parse(frame.iso) : NaN;
+          if (Number.isFinite(ts)) timestamps.push(ts);
+        });
+      });
+      if (!timestamps.length) return null;
+      const earliest = Math.min(...timestamps);
+      if (!Number.isFinite(earliest)) return null;
+      return new Date(earliest).toISOString().replace(".000Z", "Z");
+    }
+
+    function formatViewerHash(zoom, lat, lng) {
+      const zoomStr = Number.isFinite(zoom)
+        ? zoom.toFixed(2).replace(/\.?0+$/, "")
+        : "8.25";
+      const latStr = Number.isFinite(lat) ? lat.toFixed(3) : "0.000";
+      const lngStr = Number.isFinite(lng) ? lng.toFixed(3) : "0.000";
+      return `${zoomStr}/${latStr}/${lngStr}`;
+    }
+
+    function buildFciViewerUrl(iso, center) {
+      if (!iso || !center) return null;
+      const zoom = 8.25;
+      const params = new URLSearchParams();
+      params.set("time", iso);
+      const hash = formatViewerHash(zoom, center.lat, center.lng);
+      return `https://certec.mtg.eebe.upc.edu:444/viewer/?${params.toString()}#${hash}`;
+    }
+
+    async function renderFciLinksPanel() {
+      if (!fciLinksListEl) return;
+      if (fciLinksStatusEl) fciLinksStatusEl.textContent = "Loading FCI events...";
+      const list = await loadFetManifestList();
+      if (!list.length) {
+        if (fciLinksStatusEl) fciLinksStatusEl.textContent = "No FETView events listed.";
+        return;
+      }
+      fciLinksListEl.innerHTML = "";
+      let readyCount = 0;
+      for (const item of list) {
+        const fireId = item && item.id !== undefined ? String(item.id) : "n/a";
+        const dirname = normalizeDirname(item && item.dirname);
+        const meta = dirname ? await fetchFetVideoMeta(dirname) : null;
+        const center = meta ? extractMetaCenter(meta) : null;
+        const iso = meta ? extractEarliestIso(meta) : null;
+        const url = buildFciViewerUrl(iso, center);
+        const row = document.createElement("div");
+        row.className = "fci-link-item";
+        const title = document.createElement("div");
+        title.className = "fci-link-title";
+        title.textContent = `Fire ${fireId}${dirname ? ` — ${dirname}` : ""}`;
+        row.appendChild(title);
+        const metaRow = document.createElement("div");
+        metaRow.className = "fci-link-meta";
+        const timeLabel = iso ? `Time: ${iso}` : "Time: n/a";
+        const centerLabel = center
+          ? `Center: ${center.lat.toFixed(3)}, ${center.lng.toFixed(3)}`
+          : "Center: n/a";
+        metaRow.textContent = `${timeLabel} • ${centerLabel}`;
+        row.appendChild(metaRow);
+        if (url) {
+          const link = document.createElement("a");
+          link.href = url;
+          link.target = "_blank";
+          link.rel = "noopener";
+          link.textContent = url;
+          row.appendChild(link);
+          readyCount += 1;
+        } else {
+          const note = document.createElement("div");
+          note.style.fontSize = "12px";
+          note.style.color = "#b45309";
+          note.textContent = "No FCI metadata available.";
+          row.appendChild(note);
+        }
+        fciLinksListEl.appendChild(row);
+      }
+      if (fciLinksStatusEl) {
+        fciLinksStatusEl.textContent = `${readyCount} / ${list.length} FCI links ready`;
+      }
     }
 
     function approxDistanceDegrees(a, b) {
@@ -956,6 +1212,15 @@
 
     function removeVideoOverlay(reason) {
       if (!videoOverlayEl && !currentVideoFireId) return;
+      if (videoDownloadController) {
+        videoDownloadController.abort();
+        videoDownloadController = null;
+      }
+      if (currentVideoObjectUrl) {
+        URL.revokeObjectURL(currentVideoObjectUrl);
+        currentVideoObjectUrl = null;
+      }
+      videoProgressCb = null;
       if (map) {
         if (map.getLayer(videoLayerId)) map.removeLayer(videoLayerId);
         if (map.getSource(videoSourceId)) map.removeSource(videoSourceId);
@@ -977,6 +1242,75 @@
       videoOverlayEl = null;
       currentVideoFireId = null;
       if (reason) setVideoStatus(reason);
+    }
+
+    function formatBytes(bytes) {
+      if (!Number.isFinite(bytes)) return "--";
+      const units = ["B", "KB", "MB", "GB"];
+      let val = bytes;
+      let idx = 0;
+      while (val >= 1024 && idx < units.length - 1) {
+        val /= 1024;
+        idx += 1;
+      }
+      return `${val.toFixed(val >= 10 ? 0 : 1)} ${units[idx]}`;
+    }
+
+    async function fetchVideoBlob(url, progressCb, signal) {
+      const resp = await fetch(url, { cache: "no-cache", signal });
+      if (!resp.ok) {
+        throw new Error(`HTTP ${resp.status}`);
+      }
+      const total = Number(resp.headers.get("content-length")) || null;
+      if (!resp.body || !resp.body.getReader) {
+        const blob = await resp.blob();
+        if (progressCb) progressCb({ loaded: blob.size, total: total || blob.size, done: true });
+        return blob;
+      }
+      const reader = resp.body.getReader();
+      const chunks = [];
+      let loaded = 0;
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (value) {
+          chunks.push(value);
+          loaded += value.byteLength;
+          if (progressCb) progressCb({ loaded, total, done: false });
+        }
+      }
+      const blob = new Blob(chunks, { type: resp.headers.get("content-type") || "video/webm" });
+      if (progressCb) progressCb({ loaded: blob.size, total: total || blob.size, done: true });
+      return blob;
+    }
+
+    function waitForVideoReady(videoEl, timeoutMs = 15000) {
+      return new Promise((resolve) => {
+        let settled = false;
+        let timer = null;
+        const cleanup = () => {
+          if (settled) return;
+          settled = true;
+          if (timer) clearTimeout(timer);
+          videoEl.removeEventListener("loadedmetadata", onReady);
+          videoEl.removeEventListener("loadeddata", onReady);
+          videoEl.removeEventListener("canplay", onReady);
+          videoEl.removeEventListener("error", onError);
+        };
+        const onReady = () => {
+          cleanup();
+          resolve(true);
+        };
+        const onError = () => {
+          cleanup();
+          resolve(false);
+        };
+        timer = setTimeout(onError, timeoutMs);
+        videoEl.addEventListener("loadedmetadata", onReady, { once: true });
+        videoEl.addEventListener("loadeddata", onReady, { once: true });
+        videoEl.addEventListener("canplay", onReady, { once: true });
+        videoEl.addEventListener("error", onError, { once: true });
+      });
     }
 
     function fitMapForBand(band, bandInfo, fallbackLngLat) {
@@ -1129,16 +1463,10 @@
       if (!Number.isFinite(currentCursorTs)) return;
       const { startTs, frameDuration, frameCount, duration: metaDuration, framesTs, endTs } = videoTiming;
       if (!Number.isFinite(startTs)) return;
-      if (Number.isFinite(endTs) && (currentCursorTs < startTs || currentCursorTs > endTs)) {
-        if (videoCanvasCtx && videoCanvasEl) {
-          videoCanvasCtx.clearRect(0, 0, videoCanvasEl.width || 2, videoCanvasEl.height || 2);
-        }
-        if (map.getLayer(videoLayerId) && lastVideoOpacity !== 0) {
-          map.setPaintProperty(videoLayerId, "raster-opacity", 0);
-          lastVideoOpacity = 0;
-        }
-        return;
-      }
+      const effectiveTs =
+        Number.isFinite(endTs) && (currentCursorTs < startTs || currentCursorTs > endTs)
+          ? Math.min(Math.max(currentCursorTs, startTs), endTs)
+          : currentCursorTs;
       if (map.getLayer(videoLayerId) && lastVideoOpacity !== 0.9) {
         map.setPaintProperty(videoLayerId, "raster-opacity", 0.9);
         lastVideoOpacity = 0.9;
@@ -1148,7 +1476,7 @@
         let nearestIdx = 0;
         let nearestDiff = Infinity;
         framesTs.forEach((ts, idx) => {
-          const diff = Math.abs(ts - currentCursorTs);
+          const diff = Math.abs(ts - effectiveTs);
           if (diff < nearestDiff) {
             nearestDiff = diff;
             nearestIdx = idx;
@@ -1167,7 +1495,7 @@
           Number.isFinite(metaDuration) && metaDuration > 0
             ? metaDuration
             : frameDuration && frameCount ? frameDuration * frameCount : null;
-        const offsetSec = (currentCursorTs - startTs) / 1000;
+        const offsetSec = (effectiveTs - startTs) / 1000;
         target = Math.max(0, maxDur ? Math.min(maxDur, offsetSec) : offsetSec);
       }
       seekVideoToTime(target);
@@ -1245,6 +1573,12 @@
       } catch {
         url = `${ensureTrailingSlash(baseUrl)}${band.video}`;
       }
+      videoBandToken += 1;
+      const token = videoBandToken;
+      if (videoDownloadController) {
+        videoDownloadController.abort();
+      }
+      videoDownloadController = new AbortController();
       if (map.getLayer(videoLayerId)) map.removeLayer(videoLayerId);
       if (map.getSource(videoSourceId)) map.removeSource(videoSourceId);
       videoSeekToken = 0;
@@ -1259,7 +1593,30 @@
       videoHtmlEl.playsInline = true;
       videoHtmlEl.autoplay = false;
       videoHtmlEl.loop = false;
-      videoHtmlEl.src = url;
+      videoHtmlEl.preload = "auto";
+      try {
+        const blob = await fetchVideoBlob(
+          url,
+          (progress) => {
+            if (token !== videoBandToken) return;
+            if (typeof videoProgressCb === "function") {
+              videoProgressCb(progress);
+            }
+          },
+          videoDownloadController.signal
+        );
+        if (token !== videoBandToken) return false;
+        if (currentVideoObjectUrl) {
+          URL.revokeObjectURL(currentVideoObjectUrl);
+        }
+        currentVideoObjectUrl = URL.createObjectURL(blob);
+        videoHtmlEl.src = currentVideoObjectUrl;
+      } catch (err) {
+        if (token !== videoBandToken) return false;
+        console.warn("Video download failed", err);
+        setVideoStatus("Video download failed.");
+        return false;
+      }
       videoCanvasEl = document.createElement("canvas");
       videoCanvasCtx = videoCanvasEl.getContext("2d", { willReadFrequently: true });
       const framesTs = (bandInfo && Array.isArray(bandInfo.frames) ? bandInfo.frames : [])
@@ -1293,38 +1650,26 @@
       if (!earliestVideoTs && Number.isFinite(startTs)) {
         earliestVideoTs = startTs;
       }
-      await new Promise((resolve) => {
-        let resolved = false;
-        const onReady = () => {
-          if (resolved) return;
-          resolved = true;
-          if (Number.isFinite(videoHtmlEl.duration) && !Number.isFinite(videoTiming.duration)) {
-            videoTiming.duration = videoHtmlEl.duration;
-          }
-          if (videoHtmlEl.videoWidth && videoHtmlEl.videoHeight) {
-            if (videoCanvasEl.width !== videoHtmlEl.videoWidth) videoCanvasEl.width = videoHtmlEl.videoWidth;
-            if (videoCanvasEl.height !== videoHtmlEl.videoHeight) videoCanvasEl.height = videoHtmlEl.videoHeight;
-          } else if (videoCanvasEl) {
-            // Ensure a transparent canvas even if no frame is available
-            videoCanvasEl.width = videoCanvasEl.width || 2;
-            videoCanvasEl.height = videoCanvasEl.height || 2;
-            if (videoCanvasCtx) {
-              videoCanvasCtx.clearRect(0, 0, videoCanvasEl.width, videoCanvasEl.height);
-            }
-          }
-          resolve(true);
-        };
-        videoHtmlEl.addEventListener("loadedmetadata", onReady, { once: true });
-        videoHtmlEl.addEventListener("loadeddata", onReady, { once: true });
-        videoHtmlEl.addEventListener("canplay", onReady, { once: true });
-        videoHtmlEl.addEventListener(
-          "error",
-          () => {
-            if (!resolved) resolve(false);
-          },
-          { once: true }
-        );
-      });
+      videoHtmlEl.load();
+      const ready = await waitForVideoReady(videoHtmlEl, 15000);
+      if (!ready) {
+        setVideoStatus("Video decoding failed.");
+        return false;
+      }
+      if (Number.isFinite(videoHtmlEl.duration) && !Number.isFinite(videoTiming.duration)) {
+        videoTiming.duration = videoHtmlEl.duration;
+      }
+      if (videoHtmlEl.videoWidth && videoHtmlEl.videoHeight) {
+        if (videoCanvasEl.width !== videoHtmlEl.videoWidth) videoCanvasEl.width = videoHtmlEl.videoWidth;
+        if (videoCanvasEl.height !== videoHtmlEl.videoHeight) videoCanvasEl.height = videoHtmlEl.videoHeight;
+      } else if (videoCanvasEl) {
+        // Ensure a transparent canvas even if no frame is available
+        videoCanvasEl.width = videoCanvasEl.width || 2;
+        videoCanvasEl.height = videoCanvasEl.height || 2;
+        if (videoCanvasCtx) {
+          videoCanvasCtx.clearRect(0, 0, videoCanvasEl.width, videoCanvasEl.height);
+        }
+      }
       await seekVideoToTime(seekTargetSec);
       map.addSource(videoSourceId, {
         type: "canvas",
@@ -1399,6 +1744,11 @@
       const setDataStatus = (msg) => {
         dataStatus.textContent = `Images status: ${msg}`;
       };
+      const progress = document.createElement("div");
+      progress.className = "video-progress";
+      const progressFill = document.createElement("div");
+      progressFill.className = "fill";
+      progress.appendChild(progressFill);
       const select = document.createElement("select");
       bands.forEach((b) => {
         const opt = document.createElement("option");
@@ -1452,7 +1802,32 @@
         const band = bands.find((b) => b.key === key);
         if (!band) return;
         status.textContent = `Loading ${band.label}...`;
-        setDataStatus("fetching image");
+        setDataStatus("starting download");
+        progress.classList.add("is-indeterminate");
+        progressFill.style.transform = "scaleX(0)";
+        videoProgressCb = (progressInfo) => {
+          if (!progressInfo) return;
+          const { loaded, total, done } = progressInfo;
+          if (!Number.isFinite(total) || total <= 0) {
+            progress.classList.add("is-indeterminate");
+            if (done) {
+              progress.classList.remove("is-indeterminate");
+              progressFill.style.transform = "scaleX(1)";
+              setDataStatus("download complete");
+            } else {
+              setDataStatus(`downloading ${formatBytes(loaded)}...`);
+            }
+            return;
+          }
+          const pct = Math.min(1, loaded / total);
+          progress.classList.remove("is-indeterminate");
+          progressFill.style.transform = `scaleX(${pct})`;
+          setDataStatus(`downloading ${Math.round(pct * 100)}% (${formatBytes(loaded)} / ${formatBytes(total)})`);
+          if (done) {
+            progressFill.style.transform = "scaleX(1)";
+            setDataStatus("download complete");
+          }
+        };
         const bandInfo =
           meta && meta.bands ? meta.bands[band.key] || meta.bands[band.key.toUpperCase()] : null;
         const ok = await updateVideoLayer(band, bandInfo, baseUrl);
@@ -1484,6 +1859,7 @@
       wrap.appendChild(title);
       wrap.appendChild(status);
       wrap.appendChild(dataStatus);
+      wrap.appendChild(progress);
       wrap.appendChild(select);
       wrap.appendChild(hotspotToggle);
       wrap.appendChild(unloadBtn);
@@ -1513,7 +1889,6 @@
     async function loadVideosForFire(fireId) {
       if (map && map.getZoom && map.getZoom() < 7) {
         setVideoStatus("Zoom to 7+ to view videos.");
-        return;
       }
       const idStr = String(fireId ?? "").trim();
       if (!idStr) {
@@ -1726,7 +2101,7 @@
       const title = document.getElementById("frp-title");
       if (!series || !series.length) {
         currentFrpSeries = null;
-        if (status) status.textContent = frpDefaultStatus || "Zoom beyond 7, then click a fire event to load its FRP/FROS time series.";
+        if (status) status.textContent = frpDefaultStatus || "Zoom beyond 6, then click a fire event to load its FRP/FROS time series.";
         if (title) title.textContent = "FRP/FROS time series";
         renderTimeSeries("frp-canvas", [], cursorTs, { yLabel: "FRP (MW)", lineColor: "#0e1f2f" });
         renderTimeSeries("fros-canvas", [], cursorTs, { yLabel: "FROS (m/min)", lineColor: "#0d5ed6" });
@@ -1748,6 +2123,7 @@
     }
 
     const mapWrapper = document.querySelector(".map-wrapper");
+    renderFciLinksPanel().catch((err) => console.warn("Failed to load FCI links", err));
     const map = new maplibregl.Map({
       container: "map",
       hash: true,
@@ -1974,7 +2350,7 @@
           type: "circle",
           source: "fires-points",
           "source-layer": "fires_points",
-          minzoom: 7,
+          minzoom: 6,
           filter: ["==", ["geometry-type"], "Point"],
           paint: {
             "circle-radius": [
@@ -2014,7 +2390,7 @@
           type: "line",
           source: "fires-points",
           "source-layer": "fires_points",
-          minzoom: 7,
+          minzoom: 6,
           filter: ["match", ["geometry-type"], ["LineString", "MultiLineString"], true, false],
           paint: {
             "line-color": [
@@ -2043,7 +2419,7 @@
           type: "fill",
           source: "fires-points",
           "source-layer": "fires_points",
-          minzoom: 7,
+          minzoom: 6,
           filter: ["match", ["geometry-type"], ["Polygon", "MultiPolygon"], true, false],
           paint: {
             "fill-opacity": 0.12,
@@ -2056,7 +2432,7 @@
           type: "line",
           source: "fires-points",
           "source-layer": "fires_points",
-          minzoom: 7,
+          minzoom: 6,
           filter: ["match", ["geometry-type"], ["Polygon", "MultiPolygon"], true, false],
           paint: {
             "line-color": [
@@ -2101,9 +2477,13 @@
         const monthProgressFill = monthProgress ? monthProgress.querySelector(".fill") : null;
         let intradayHasTimes = false;
         let showAllDay = false;
+        if (allDayToggle) {
+          showAllDay = allDayToggle.checked;
+        }
+        let hasUserTimelineChange = false;
         const toggleTimeControlVisibility = () => {
           const z = map.getZoom();
-          intradayControl.style.display = intradayHasTimes && z > 7 ? "flex" : "none";
+          intradayControl.style.display = intradayHasTimes && z >= 6 ? "flex" : "none";
         };
         const updateTimeControlState = () => {
           const disabled = showAllDay;
@@ -2236,7 +2616,19 @@
       }
       syncVideoToTime();
       refreshHotspots(currentCursorTs);
+      if (hasUserTimelineChange && Number.isFinite(currentCursorTs)) {
+        updateUrlTimeParam(currentCursorTs);
+      }
     };
+          unsetAllDay = () => {
+            if (!allDayToggle) return;
+            if (!allDayToggle.checked) return;
+            allDayToggle.checked = false;
+            showAllDay = false;
+            updateTimeControlState();
+            applyFilters();
+            toggleTimeControlVisibility();
+          };
 
           const refreshDayControls = async () => {
             setActiveDayList();
@@ -2306,7 +2698,12 @@
           window.setTimelineFromTs = jumpTimelineToTimestamp;
 
           refreshDayControls();
+          const urlTime = parseUrlTimeParam(params.get("time"));
+          if (Number.isFinite(urlTime)) {
+            window.setTimelineFromTs(urlTime).catch((err) => console.warn("URL time sync failed", err));
+          }
       daySlider.addEventListener("input", (e) => {
+        hasUserTimelineChange = true;
         currentDayIdx = Number(e.target.value);
         window.currentDayBounds = null;
         setTimeSliderForDay();
@@ -2314,18 +2711,25 @@
         syncVideoToTime();
       });
       daySlider.addEventListener("change", (e) => {
+        hasUserTimelineChange = true;
         currentDayIdx = Number(e.target.value);
         window.currentDayBounds = null;
         setTimeSliderForDay();
         applyFilters();
         syncVideoToTime();
       });
+          let timeSliderDebounce = null;
           timeSlider.addEventListener("input", (e) => {
+            hasUserTimelineChange = true;
             currentTimeIdx = Number(e.target.value);
-            applyFilters();
-            syncVideoToTime();
+            if (timeSliderDebounce) clearTimeout(timeSliderDebounce);
+            timeSliderDebounce = setTimeout(() => {
+              applyFilters();
+              syncVideoToTime();
+            }, 120);
           });
           timeSlider.addEventListener("change", (e) => {
+            hasUserTimelineChange = true;
             currentTimeIdx = Number(e.target.value);
             applyFilters();
             syncVideoToTime();
@@ -2336,6 +2740,7 @@
           });
           if (allDayToggle) {
             allDayToggle.addEventListener("change", () => {
+              hasUserTimelineChange = true;
               showAllDay = allDayToggle.checked;
               updateTimeControlState();
               applyFilters();
@@ -2438,6 +2843,11 @@
             videoBtn.addEventListener("click", (evt) => {
               evt.preventDefault();
               lastVideoClickLngLat = e.lngLat;
+              suppressFrpResetOnPopupClose = true;
+              popup.remove();
+              if (typeof unsetAllDay === "function") {
+                unsetAllDay();
+              }
               loadVideosForFire(fireId);
             });
             actions.appendChild(videoBtn);

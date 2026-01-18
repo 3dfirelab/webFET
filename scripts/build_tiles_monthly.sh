@@ -28,8 +28,11 @@ export PATH='/home/paugam/Installed_Lib/PMTILES/':$PATH
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 OUT_DIR="${ROOT_DIR}/tiles"
-SIM_NAME="${SIM_NAME:-MEDpc}"
-STATS_DIR="/media/paugam/gast/FCI/${SIM_NAME}_fire_events/Stats"
+SIM_NAME="${SIM_NAME:-MED2}"
+STATS_DIR="/mnt/data3/FCI/${SIM_NAME}_fire_events/Stats"
+#STATS_DIR="/media/paugam/gast/FCI/${SIM_NAME}_fire_events/Stats"
+
+echo $STATS_DIR
 STATS_GDF="${STATS_GDF:-}"
 if [[ -z "${STATS_GDF}" ]]; then
   if [[ -n "${SIM_START:-}" && -n "${SIM_END:-}" ]]; then
@@ -46,7 +49,7 @@ else
 fi
 
 MAX_ZOOM="${MAX_ZOOM:-11}"          # tippecanoe max zoom for raw layer
-RAW_MIN_ZOOM="${RAW_MIN_ZOOM:-7}"   # tippecanoe min zoom for raw layer (shows at z≥7)
+RAW_MIN_ZOOM="${RAW_MIN_ZOOM:-6}"   # tippecanoe min zoom for raw layer (shows at z≥6)
 H3_MIN_ZOOM="${H3_MIN_ZOOM:-0}"     # tippecanoe min zoom for H3 layer
 H3_RES="${H3_RES:-4}"
 LOW_ZOOM_MAX="${LOW_ZOOM_MAX:-7}"
@@ -107,7 +110,7 @@ for MONTH in "${MONTHS[@]}"; do
 
   echo "Building H3-only tiles for ${MONTH} -> ${OUT_H3_PM}"
   python "${ROOT_DIR}/scripts/stream_features_h3.py" \
-    --data-dir "${ROOT_DIR}/GeoJson-per-event" \
+    --data-dir "${ROOT_DIR}/GeoJson" \
     --h3-res "${H3_RES}" \
     --low-zoom-max "${LOW_ZOOM_MAX}" \
     --high-zoom-min "${HIGH_ZOOM_MIN}" \
@@ -131,7 +134,7 @@ for MONTH in "${MONTHS[@]}"; do
 
   echo "Building raw-point tiles for ${MONTH} -> ${OUT_POINTS_PM}"
   python "${ROOT_DIR}/scripts/stream_features.py" \
-    --data-dir "${ROOT_DIR}/GeoJson-per-event" \
+    --data-dir "${ROOT_DIR}/GeoJson" \
     --start-date "${START}" \
     --end-date "${END}" \
     "${STATS_ARG[@]}" \
